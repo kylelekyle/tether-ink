@@ -449,7 +449,10 @@ final class AppModel {
                 var p: [Double] = []
                 for i in 0...70 {
                     let t = Double(i) / 70
-                    p += [r2(x0 + t * 250), r2(y0 + sin(t * .pi * 2) * 30), r3(0.12 + 0.88 * pow(sin(.pi * t), 0.7))]
+                    let x: Double = x0 + t * 250
+                    let y: Double = y0 + sin(t * Double.pi * 2) * 30
+                    let pr: Double = 0.12 + 0.88 * pow(sin(Double.pi * t), 0.7)
+                    p.append(r2(x)); p.append(r2(y)); p.append(r3(pr))
                 }
                 var shape = b.shape; shape.size = r2(b.size * m)
                 let s = StrokeItem(id: newID(), m: "d", c: b.id == "marker" ? "#a9c2f5" : "#111111", o: 1, b: shape, p: p)

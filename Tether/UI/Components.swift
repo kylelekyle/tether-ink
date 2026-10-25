@@ -86,9 +86,13 @@ struct BrushPreview: View {
     var body: some View {
         Canvas { ctx, size in
             var p: [Double] = []
+            let w = Double(size.width), h = Double(size.height)
             for i in 0...60 {
                 let t = Double(i) / 60
-                p += [10 + t * (size.width - 20), size.height / 2 + sin(t * .pi * 2) * size.height * 0.22, 0.15 + 0.85 * pow(sin(.pi * t), 0.7)]
+                let x: Double = 10 + t * (w - 20)
+                let y: Double = h / 2 + sin(t * Double.pi * 2) * h * 0.22
+                let pr: Double = 0.15 + 0.85 * pow(sin(Double.pi * t), 0.7)
+                p.append(x); p.append(y); p.append(pr)
             }
             var shape = brush.shape
             shape.size = min(max(brush.size, 1.2), 10)

@@ -36,7 +36,10 @@ final class PadCanvas: UIView {
         let w = Double(bounds.width), h = Double(bounds.height)
         for i in 0...80 {
             let t = Double(i) / 80
-            p += [w * 0.12 + t * w * 0.76, h * 0.5 + sin(t * .pi * 2) * h * 0.16, 0.15 + 0.85 * pow(sin(.pi * t), 0.7)]
+            let x: Double = w * 0.12 + t * w * 0.76
+            let y: Double = h * 0.5 + sin(t * Double.pi * 2) * h * 0.16
+            let pr: Double = 0.15 + 0.85 * pow(sin(Double.pi * t), 0.7)
+            p.append(x); p.append(y); p.append(pr)
         }
         items.append((p, false))
         setNeedsDisplay()

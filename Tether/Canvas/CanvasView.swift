@@ -892,15 +892,20 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     }
     @objc private func stepAnim() {
         guard let a = anim else { displayLink?.invalidate(); displayLink = nil; return }
-        let k = min(1, (CACurrentMediaTime() - a.start) / 0.22), e = 1 - pow(1 - k, 3)
+        let k: Double = min(1, (CACurrentMediaTime() - a.start) / 0.22)
+        let e: CGFloat = CGFloat(1 - pow(1 - k, 3))
         let to = a.to
-        var dt = to.angle - a.from.a
+        var dt: CGFloat = to.angle - a.from.a
         while dt > .pi { dt -= 2 * .pi }
         while dt < -.pi { dt += 2 * .pi }
-        let s = exp(log(a.from.s) + (log(to.scaleFactor) - log(a.from.s)) * e)
-        let ang = a.from.a + dt * e
-        var v = CGAffineTransform(a: cos(ang) * s, b: sin(ang) * s, c: -sin(ang) * s, d: cos(ang) * s,
-                                  tx: a.from.tx + (to.tx - a.from.tx) * e, ty: a.from.ty + (to.ty - a.from.ty) * e)
+        let ls0: Double = Foundation.log(Double(a.from.s))
+        let ls1: Double = Foundation.log(Double(to.scaleFactor))
+        let s: CGFloat = CGFloat(Foundation.exp(ls0 + (ls1 - ls0) * Double(e)))
+        let ang: CGFloat = a.from.a + dt * e
+        let ca: CGFloat = cos(ang) * s, sa: CGFloat = sin(ang) * s
+        let tx: CGFloat = a.from.tx + (to.tx - a.from.tx) * e
+        let ty: CGFloat = a.from.ty + (to.ty - a.from.ty) * e
+        var v = CGAffineTransform(a: ca, b: sa, c: -sa, d: ca, tx: tx, ty: ty)
         if a.flip { v = CGAffineTransform(a: -v.a, b: -v.b, c: v.c, d: v.d, tx: v.tx, ty: v.ty) }
         if k >= 1 { anim = nil; displayLink?.invalidate(); displayLink = nil; setView(to) } else { setView(v, live: true) }
     }
@@ -917,8 +922,10 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             for i in 1...120 {
                 t += 8
                 let x = base.x + CGFloat(i) * 4.4
-                let y = y0 + sin(CGFloat(i) / 14) * 40 + CGFloat.random(in: -3...3)
-                feed(st, CGPoint(x: x, y: y), raw: 0.15 + 0.8 * sin(Double.pi * Double(i) / 120), time: t)
+                let wobble: CGFloat = sin(CGFloat(i) / 14) * 40
+                let y: CGFloat = y0 + wobble + CGFloat.random(in: -3...3)
+                let pr: Double = 0.15 + 0.8 * sin(Double.pi * Double(i) / 120)
+                feed(st, CGPoint(x: x, y: y), raw: pr, time: t)
             }
             finishStroke(cancel: false)
         }
