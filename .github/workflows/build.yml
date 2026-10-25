@@ -1,0 +1,150 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      VERSION: 0.1.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick Xcode
+        run: |
+          ls /Applications | grep -i xcode || true
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then sudo xcode-select -s "$LATEST"; fi
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Find an iPad simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[(rt,x) for rt,v in d.items() if "iOS" in rt for x in v if x["name"].startswith("iPad")]
+          pref=[x for x in c if "Pro 13" in x[1]["name"]] or [x for x in c if "Pro" in x[1]["name"]] or c
+          pref.sort(key=lambda x:x[0])
+          print(pref[-1][1]["udid"])')
+          echo "SIM=$UDID" >> $GITHUB_ENV
+          xcrun simctl list devices available | grep "$UDID"
+
+      - name: Unit tests
+        run: |
+          set +e
+          xcodebuild test -project TetherInk.xcodeproj -scheme TetherInk -destination "id=$SIM" \
+            -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO > test.log 2>&1
+          STATUS=$?
+          grep -E "error:|Test Case .*(passed|failed)|Executed|\*\* TEST" test.log | head -200
+          if [ $STATUS -ne 0 ]; then tail -80 test.log; fi
+          exit $STATUS
+
+      - name: Build unsigned IPA for SideStore
+        run: |
+          set +e
+          xcodebuild -project TetherInk.xcodeproj -scheme TetherInk -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build-dev \
+            MARKETING_VERSION=$VERSION CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1
+          STATUS=$?
+          grep -E "error:|\*\* BUILD" build.log | head -200
+          if [ $STATUS -ne 0 ]; then tail -60 build.log; exit $STATUS; fi
+          set -e
+          mkdir -p Payload
+          cp -R build-dev/Build/Products/Release-iphoneos/TetherInk.app Payload/
+          zip -qry TetherInk.ipa Payload
+          SIZE=$(stat -f%z TetherInk.ipa)
+          echo "App download size: $((SIZE / 1024)) KB" | tee -a $GITHUB_STEP_SUMMARY
+          du -sh Payload/TetherInk.app | tee -a $GITHUB_STEP_SUMMARY
+          if [ $SIZE -gt 12000000 ]; then echo "::error::App is over the 12 MB budget"; exit 1; fi
+
+      - name: Simulator screenshots
+        continue-on-error: true
+        run: |
+          xcodebuild -project TetherInk.xcodeproj -scheme TetherInk -configuration Debug -destination "id=$SIM" \
+            -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO build -quiet
+          xcrun simctl boot "$SIM" || true
+          xcrun simctl bootstatus "$SIM" -b
+          xcrun simctl install "$SIM" build-sim/Build/Products/Debug-iphonesimulator/TetherInk.app
+          mkdir -p shots
+          for d in draw library editor global layers smoothing actions colour gallery; do
+            xcrun simctl launch --terminate-running-process "$SIM" ink.tether.app -demo $d
+            sleep 7
+            xcrun simctl io "$SIM" screenshot "shots/$d.png"
+          done
+
+      - name: SideStore source
+        run: |
+          SIZE=$(stat -f%z TetherInk.ipa)
+          python3 - <<EOF
+          import json, datetime
+          repo = "${{ github.repository }}"
+          base = f"https://github.com/{repo}/releases/download/latest"
+          src = {
+            "name": "Tether Ink",
+            "identifier": "ink.tether.source",
+            "subtitle": "Vector drawing for iPad",
+            "website": f"https://github.com/{repo}",
+            "apps": [{
+              "name": "Tether Ink",
+              "bundleIdentifier": "ink.tether.app",
+              "developerName": repo.split("/")[0],
+              "subtitle": "Vector drawing with real stabilisers",
+              "localizedDescription": "A vector drawing app for iPad with a rope stabiliser, streamline, stabilisation and motion filtering, pressure-sensitive vector brushes, layers and SVG export.",
+              "iconURL": f"https://raw.githubusercontent.com/{repo}/main/icon.png",
+              "tintColor": "#2a63f5",
+              "versions": [{
+                "version": "${VERSION}",
+                "buildVersion": "${{ github.run_number }}",
+                "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "localizedDescription": "Build ${{ github.run_number }} from ${GITHUB_SHA::7}",
+                "downloadURL": f"{base}/TetherInk.ipa",
+                "size": ${SIZE},
+                "minOSVersion": "17.0"
+              }],
+              "appPermissions": {"entitlements": [], "privacy": {}}
+            }],
+            "news": []
+          }
+          json.dump(src, open("source.json", "w"), indent=2)
+          EOF
+          cat source.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tether-ink-${{ github.run_number }}
+          path: |
+            TetherInk.ipa
+            source.json
+            shots/
+            test.log
+            build.log
+          if-no-files-found: ignore
+
+      - name: Publish the "latest" release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest TetherInk.ipa source.json \
+            --title "Tether Ink ${VERSION}" \
+            --notes "Install with SideStore: add the source https://github.com/${{ github.repository }}/releases/download/latest/source.json or open TetherInk.ipa directly." \
+            --target "${GITHUB_SHA}"
