@@ -19,7 +19,7 @@ jobs:
     env:
       VERSION: 0.1.${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Pick Xcode
         run: |
@@ -125,6 +125,28 @@ jobs:
           json.dump(src, open("source.json", "w"), indent=2)
           EOF
           cat source.json
+
+      - name: Publish logs and screenshots to the ci-logs branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/ci
+          for f in test.log build.log; do
+            if [ -f "$f" ]; then
+              grep -E "error:|fatal error|Test Case .*failed|XCTAssert|\*\* (TEST|BUILD)" "$f" | head -400 > "/tmp/ci/${f%.log}-errors.txt" || true
+              tail -400 "$f" > "/tmp/ci/${f%.log}-tail.txt"
+            fi
+          done
+          [ -d shots ] && cp -R shots /tmp/ci/ || true
+          [ -f source.json ] && cp source.json /tmp/ci/ || true
+          [ -f TetherInk.ipa ] && echo "ipa_bytes=$(stat -f%z TetherInk.ipa)" > /tmp/ci/size.txt || true
+          echo "run ${{ github.run_number }} ${GITHUB_SHA}" > /tmp/ci/run.txt
+          cd /tmp/ci
+          git init -q -b ci-logs
+          git add -A
+          git -c user.name="CI" -c user.email="ci@users.noreply.github.com" commit -qm "CI output for run ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" ci-logs
 
       - uses: actions/upload-artifact@v4
         if: always()
