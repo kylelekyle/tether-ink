@@ -6,11 +6,14 @@ struct LayerSnap {
     let visible: Bool
     let opacity: Double
     let hasErase: Bool
+    let tiles: [Int: CGImage]?
     init(_ l: Layer, hiding: String? = nil) {
         items = hiding.map { h in l.items.filter { $0.id != h } } ?? l.items
-        visible = l.visible; opacity = l.opacity; hasErase = l.hasErase
+        visible = l.visible; opacity = l.opacity; hasErase = l.hasErase; tiles = l.tiles
     }
-    init(items: [Item], visible: Bool, opacity: Double) { self.items = items; self.visible = visible; self.opacity = opacity; hasErase = items.contains { $0.isErase } }
+    init(items: [Item], visible: Bool, opacity: Double, tiles: [Int: CGImage]? = nil) {
+        self.items = items; self.visible = visible; self.opacity = opacity; hasErase = items.contains { $0.isErase }; self.tiles = tiles
+    }
 }
 
 func rgba(hex: String) -> (CGFloat, CGFloat, CGFloat) {
@@ -62,6 +65,15 @@ enum DocRenderer {
         ctx.scaleBy(x: 1, y: -1)
         ctx.scaleBy(x: scale, y: scale)
         ctx.concatenate(view)
+    }
+
+    /// A layer's pixels (if it's a pixel layer), then its vector items.
+    static func drawLayer(_ ctx: CGContext, _ L: LayerSnap, visible: CGRect?) {
+        if let t = L.tiles, !t.isEmpty {
+            ctx.interpolationQuality = .medium
+            Tiles.draw(t, in: ctx, visible: visible)
+        }
+        drawItems(ctx, L.items, visible: visible)
     }
 
     static func drawItems(_ ctx: CGContext, _ items: [Item], visible: CGRect?) {
@@ -160,7 +172,7 @@ enum DocRenderer {
             ctx.saveGState()
             applyView(ctx, height: j.pxH, scale: j.scale, view: j.view)
             ctx.clip(to: page)
-            drawItems(ctx, L.items, visible: vis)
+            DocRenderer.drawLayer(ctx, L, visible: vis)
             ctx.restoreGState()
         }
         func layerImage(_ L: LayerSnap) -> CGImage? {
@@ -211,13 +223,13 @@ enum DocRenderer {
                 ctx.saveGState()
                 applyView(ctx, height: ph, scale: CGFloat(scale), view: view)
                 ctx.clip(to: CGRect(x: 0, y: 0, width: w, height: h))
-                drawItems(ctx, L.items, visible: nil)
+                DocRenderer.drawLayer(ctx, L, visible: nil)
                 ctx.restoreGState()
             } else {
                 guard let lc = makeContext(pw, ph) else { continue }
                 applyView(lc, height: ph, scale: CGFloat(scale), view: view)
                 lc.clip(to: CGRect(x: 0, y: 0, width: w, height: h))
-                drawItems(lc, L.items, visible: nil)
+                DocRenderer.drawLayer(lc, L, visible: nil)
                 if let img = lc.makeImage() {
                     ctx.setAlpha(CGFloat(L.opacity))
                     ctx.draw(img, in: CGRect(x: 0, y: 0, width: pw, height: ph))

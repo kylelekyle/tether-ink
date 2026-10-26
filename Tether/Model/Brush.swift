@@ -19,11 +19,14 @@ struct Brush: Codable, Identifiable, Equatable {
     var motionExpr: Double = 0
     var mode: String? = nil     // erasers: "cut" or "whole"
     var note: String? = nil
-    var stamp: StampParams? = nil   // set for scatter brushes
+    var stamp: StampParams? = nil   // set for scatter brushes (and how a pixel brush places its dabs)
+    var pixel: PixelParams? = nil   // set for pixel brushes, which paint pixel layers
+    var isPixel: Bool { pixel != nil }
 
     static let keys = ["size", "thinning", "taperStart", "taperEnd", "smoothing", "gamma", "streamline", "slPressure", "stab", "stabSpeed", "motion", "motionExpr"]
     /// Scatter settings. "scatter" (1 on, 0 off) comes first so the others have something to set.
     static let stampKeys = ["scatter", "spacing", "jitter", "jitterLinear", "sizeJitter", "rotation", "scale", "oriented"]
+    static let pixelKeys = ["flow", "hardness", "pressureOpacity", "opacityJitter", "grainDepth", "grainScale"]
 
     subscript(key: String) -> Double {
         get {
@@ -48,6 +51,12 @@ struct Brush: Codable, Identifiable, Equatable {
             case "sizeJitter": return stamp?.sizeJitter ?? 0
             case "rotation": return stamp?.rotation ?? 0
             case "scale": return stamp?.scale ?? 1
+            case "flow": return pixel?.flow ?? 0
+            case "hardness": return pixel?.hardness ?? 0
+            case "pressureOpacity": return pixel?.pressureOpacity ?? 0
+            case "opacityJitter": return pixel?.opacityJitter ?? 0
+            case "grainDepth": return pixel?.grainDepth ?? 0
+            case "grainScale": return pixel?.grainScale ?? 0
             default: return 0
             }
         }
@@ -73,6 +82,12 @@ struct Brush: Codable, Identifiable, Equatable {
             case "sizeJitter": stamp?.sizeJitter = newValue
             case "rotation": stamp?.rotation = newValue
             case "scale": stamp?.scale = max(0.05, newValue)
+            case "flow": pixel?.flow = clampD(newValue, 0.02, 1)
+            case "hardness": pixel?.hardness = clampD(newValue, 0, 1)
+            case "pressureOpacity": pixel?.pressureOpacity = clampD(newValue, 0, 1)
+            case "opacityJitter": pixel?.opacityJitter = clampD(newValue, 0, 1)
+            case "grainDepth": pixel?.grainDepth = clampD(newValue, 0, 1)
+            case "grainScale": pixel?.grainScale = clampD(newValue, 0, 1)
             default: break
             }
         }
@@ -83,7 +98,7 @@ struct Brush: Codable, Identifiable, Equatable {
     /// The shape stored with every stroke (input smoothing is already baked into the points).
     var shape: BrushShape {
         var s = BrushShape(size: size, thin: thinning, ts: taperStart, te: taperEnd, sm: smoothing, sl: 0, g: gamma, sim: false)
-        s.k = isEraser ? nil : stamp
+        s.k = isEraser || isPixel ? nil : stamp
         return s
     }
 
@@ -100,7 +115,18 @@ struct Brush: Codable, Identifiable, Equatable {
         Brush(id: "round", name: "Round Fill", set: "paint", size: 40, thinning: 0.35, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1, streamline: 0.1),
         Brush(id: "marker", name: "Flat Marker", set: "paint", size: 26, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.1),
         Brush(id: "stipple", name: "Stipple", set: "paint", size: 30, thinning: 0.6, taperStart: 0.1, taperEnd: 0.2, smoothing: 0.5, gamma: 1, streamline: 0, motion: 0,
-              stamp: StampParams(shape: nil, spacing: 0.08, scale: 0.14, jitter: 1, jitterLinear: 1, sizeJitter: 0.5, rotation: 0, oriented: false))
+              stamp: StampParams(shape: nil, spacing: 0.08, scale: 0.14, jitter: 1, jitterLinear: 1, sizeJitter: 0.5, rotation: 0, oriented: false)),
+        // pixel brushes: they paint pixel layers
+        Brush(id: "px-round", name: "Hard Round", set: "pixel", size: 12, thinning: 0.6, taperStart: 0.05, taperEnd: 0.15, smoothing: 0.5, gamma: 1,
+              stamp: StampParams(spacing: 0.06), pixel: PixelParams.make(hardness: 0.92)),
+        Brush(id: "px-air", name: "Soft Airbrush", set: "pixel", size: 120, thinning: 0.2, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1,
+              stamp: StampParams(spacing: 0.08), pixel: PixelParams.make(hardness: 0, flow: 0.45, pressureOpacity: 1)),
+        Brush(id: "px-pencil", name: "Pencil", set: "pixel", size: 5, thinning: 0.5, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1.1,
+              stamp: StampParams(spacing: 0.12, jitter: 0.08, sizeJitter: 0.2, rotation: 1),
+              pixel: PixelParams.make(hardness: 0.7, flow: 0.85, pressureOpacity: 0.8, grain: "noise", grainScale: 0.15, grainDepth: 0.85)),
+        Brush(id: "px-chalk", name: "Chalk", set: "pixel", size: 28, thinning: 0.3, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1,
+              stamp: StampParams(spacing: 0.1, jitter: 0.05, rotation: 1),
+              pixel: PixelParams.make(hardness: 0.6, flow: 0.9, pressureOpacity: 0.5, grain: "noise", grainScale: 0.4, grainDepth: 1))
     ]
 
     static let erasers: [Brush] = [

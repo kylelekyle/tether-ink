@@ -143,6 +143,9 @@ struct SizeEntry: View {
 struct BrushPreview: View {
     let brush: Brush
     var body: some View {
+        if brush.isPixel { PixelBrushPreview(brush: brush) } else { vector }
+    }
+    private var vector: some View {
         Canvas { ctx, size in
             var p: [Double] = []
             let w = Double(size.width), h = Double(size.height)
@@ -159,6 +162,30 @@ struct BrushPreview: View {
             ctx.fill(Path(StrokeGeometry.path(o)), with: .foreground)
         }
         .frame(width: 120, height: 34)
+    }
+}
+
+/// A pixel brush's stroke, painted once and kept.
+struct PixelBrushPreview: View {
+    let brush: Brush
+    @Environment(\.colorScheme) private var scheme
+    private static var cache: [String: UIImage] = [:]
+    var body: some View {
+        let ink = scheme == .dark ? "#ffffff" : "#111111"
+        let key = "\(brush.id)|\(brush.size)|\(ink)|\(String(describing: brush.pixel))|\(String(describing: brush.stamp))"
+        let img = Self.cache[key] ?? {
+            var b = brush
+            b.size = min(max(brush.size, 2), 22)
+            var p: [Double] = []
+            for i in 0...60 {
+                let t = Double(i) / 60
+                p += [12 + t * 216, 34 + sin(t * Double.pi * 2) * 15, 0.15 + 0.85 * pow(sin(Double.pi * t), 0.7)]
+            }
+            let ui = PixelPaint.preview(b, width: 240, height: 68, color: ink, lines: [p]).map { UIImage(cgImage: $0, scale: 2, orientation: .up) } ?? UIImage()
+            Self.cache[key] = ui
+            return ui
+        }()
+        Image(uiImage: img).resizable().scaledToFit().frame(width: 120, height: 34)
     }
 }
 

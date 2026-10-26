@@ -511,6 +511,115 @@ final class EngineTests: XCTestCase {
         XCTAssertNil(BrushImport.traceShape(round, inverted: false), "a plain round shape is just a dot")
     }
 
+    // MARK: pixel layers
+
+    private func pxBrush(_ id: String = "px-round") -> Brush { Brush.builtIn.first { $0.id == id }! }
+    /// (x, y, pressure) points along a straight line.
+    private func pxLine(_ a: V2, _ b: V2, pressure: Double = 1) -> [Double] {
+        let n = max(2, Int(a.dist(b) / 2))
+        return (0...n).flatMap { i -> [Double] in let p = V2.lerp(a, b, Double(i) / Double(n)); return [p.x, p.y, pressure] }
+    }
+    private func alphaAt(_ tiles: [Int: CGImage], _ x: Int, _ y: Int) -> UInt8 {
+        guard let img = tiles[Tiles.key(x / Tiles.size, y / Tiles.size)] else { return 0 }
+        return Tiles.alpha(img)[(y % Tiles.size) * Tiles.size + x % Tiles.size]
+    }
+
+    func testPixelStrokePaintsAndCommits() {
+        var b = pxBrush(); b.taperStart = 0; b.taperEnd = 0
+        let s = PixelStroke(brush: b, seed: 1, erase: false, docW: 600, docH: 400)
+        s.advance(StrokeGeometry.bake(pxLine(V2(20, 100), V2(500, 100)), b.shape))
+        let tiles = s.commit(onto: [:], color: "#ff0000", opacity: 1)
+        XCTAssertEqual(Set(tiles.keys), [Tiles.key(0, 0), Tiles.key(1, 0)], "only the tiles it crossed")
+        XCTAssertGreaterThan(alphaAt(tiles, 300, 100), 240, "solid on the line")
+        XCTAssertGreaterThan(alphaAt(tiles, 257, 100), 240, "and across the tile edge")
+        XCTAssertEqual(alphaAt(tiles, 300, 130), 0, "nothing beside it")
+    }
+
+    func testPixelChunksPaintLikeTheWholeStroke() {
+        var b = pxBrush("px-pencil"); b.taperStart = 0; b.taperEnd = 0
+        let pts = StrokeGeometry.bake(pxLine(V2(10, 50), V2(450, 300), pressure: 0.7), b.shape)
+        let whole = PixelStroke(brush: b, seed: 9, erase: false, docW: 512, docH: 512)
+        whole.advance(pts)
+        let parts = PixelStroke(brush: b, seed: 9, erase: false, docW: 512, docH: 512)
+        let m = 40
+        parts.advance(Array(pts[0..<((m + 1) * 3)]))
+        parts.advance(Array(pts[(m * 3)...]))
+        for k in [Tiles.key(0, 0), Tiles.key(1, 0), Tiles.key(0, 1), Tiles.key(1, 1)] {
+            let a = whole.coverage(k, withTail: false), c = parts.coverage(k, withTail: false)
+            XCTAssertEqual(zip(a, c).map { abs(Int($0) - Int($1)) }.max() ?? 0, 0, "tile \(Tiles.name(k)) differs")
+        }
+    }
+
+    func testGlazedPaintStopsAtTheFlow() {
+        var b = pxBrush(); b.pixel?.flow = 0.5; b.taperStart = 0; b.taperEnd = 0
+        let s = PixelStroke(brush: b, seed: 1, erase: false, docW: 300, docH: 200)
+        s.advance(StrokeGeometry.bake(pxLine(V2(20, 100), V2(280, 100)), b.shape))
+        let peak = s.coverage(Tiles.key(0, 0), withTail: false).max() ?? 0
+        XCTAssertEqual(Double(peak), 127.5, accuracy: 4, "hundreds of overlapping dabs, still half strength")
+    }
+
+    func testErasingPixels() {
+        var b = pxBrush(); b.taperStart = 0; b.taperEnd = 0
+        let paint = PixelStroke(brush: b, seed: 1, erase: false, docW: 300, docH: 200)
+        paint.advance(StrokeGeometry.bake(pxLine(V2(20, 100), V2(280, 100)), b.shape))
+        let tiles = paint.commit(onto: [:], color: "#000000", opacity: 1)
+        var eraser = Brush.erasers[0]; eraser.size = 30
+        let rub = PixelStroke(brush: eraser, seed: 2, erase: true, docW: 300, docH: 200)
+        rub.advance(StrokeGeometry.bake(pxLine(V2(100, 60), V2(100, 140)), eraser.shape))
+        var after = tiles
+        for (k, img) in rub.commit(onto: tiles, color: "#000000", opacity: 1) { after[k] = img }
+        XCTAssertEqual(alphaAt(after, 100, 100), 0, "rubbed out")
+        XCTAssertGreaterThan(alphaAt(after, 200, 100), 240, "the rest stays")
+    }
+
+    func testPixelLayersSurviveSaving() throws {
+        let d = Doc(w: 600, h: 400, name: "Paint")
+        let L = Layer(name: "Pixels", pixel: true)
+        d.layers.append(L); d.active = L.id
+        var b = pxBrush(); b.taperStart = 0; b.taperEnd = 0
+        let s = PixelStroke(brush: b, seed: 1, erase: false, docW: d.w, docH: d.h)
+        s.advance(StrokeGeometry.bake(pxLine(V2(30, 30), V2(560, 370)), b.shape))
+        L.tiles = s.commit(onto: [:], color: "#336699", opacity: 0.8)
+        for data in [try JSONEncoder().encode(d), DocWriter.json(DocWriter.Snapshot(d))] {
+            let back = try JSONDecoder().decode(Doc.self, from: data)
+            XCTAssertFalse(back.layers[0].isPixel, "the vector layer stays vector")
+            let P = back.layers[1]
+            XCTAssertTrue(P.isPixel)
+            XCTAssertEqual(Set(P.tiles!.keys), Set(L.tiles!.keys))
+            XCTAssertEqual(Double(alphaAt(P.tiles!, 295, 200)), Double(alphaAt(L.tiles!, 295, 200)), accuracy: 1)
+            XCTAssertGreaterThan(alphaAt(P.tiles!, 295, 200), 150)
+        }
+        let png = DocRenderer.renderDoc(d, scale: 1)
+        XCTAssertNotNil(png)
+    }
+
+    func testFillingAPaintedShape() {
+        var b = pxBrush(); b.taperStart = 0; b.taperEnd = 0
+        let s = PixelStroke(brush: b, seed: 1, erase: false, docW: 400, docH: 400)
+        let c = [V2(50, 50), V2(350, 50), V2(350, 350), V2(50, 350), V2(50, 50)]
+        for i in 0..<4 { s.advance(StrokeGeometry.bake(pxLine(c[i], c[i + 1]), b.shape)) }
+        let paint = s.commit(onto: [:], color: "#000000", opacity: 1)
+        guard let polys = FloodFill.region([], tiles: [paint], w: 400, h: 400, seed: V2(200, 200)) else { return XCTFail("no region") }
+        var filled = paint
+        for (k, img) in PixelPaint.fill(paint, polygons: polys, color: "#ff0000", opacity: 1, w: 400, h: 400) { filled[k] = img }
+        XCTAssertEqual(alphaAt(filled, 200, 200), 255, "inside is filled")
+        XCTAssertEqual(alphaAt(filled, 20, 20), 0, "outside isn't")
+    }
+
+    func testImportedProcreateBrushBecomesAPixelBrush() {
+        let pb = PBrush(name: "Grainy", nums: ["maxSize": 0.5, "minSize": 0, "paintSize": 0.5, "plotSpacing": 0.1, "plotJitter": 0.2,
+                                                "dynamicsGlazedFlow": 0.6, "dynamicsPressureOpacity": 1, "textureScale": 0.3, "grainDepth": 0.8])
+        pb.texts["bundledGrainPath"] = "Gouache-Wash.jpg"
+        let b = BrushImport.pixelBrush(pb, folder: "pTest", set: "Kit", hasShape: false, hasGrain: false)
+        XCTAssertTrue(b.isPixel)
+        XCTAssertEqual(b.set, "pix:Kit")
+        XCTAssertEqual(b.pixel?.flow ?? 0, 0.6, accuracy: 1e-9)
+        XCTAssertEqual(b.pixel?.grain, "noise", "a bundled grain we don't have becomes paper noise")
+        XCTAssertEqual(b.stamp?.spacing ?? 0, 0.1, accuracy: 1e-9)
+        XCTAssertEqual(b.stamp?.jitter ?? 0, 0.4, accuracy: 1e-9)
+        XCTAssertNil(b.shape.k, "pixel brushes never draw vector dabs")
+    }
+
     func testSVGExportIsWellFormed() {
         let d = AppModel.makeSampler()
         let svg = Exporter.svg(d)

@@ -20,8 +20,8 @@ struct BrushLibraryPanel: View {
                     Label("Import", systemImage: "square.and.arrow.down").font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
-                if !pixel {
-                    Button { let id = model.duplicateBrush(model.prefs.brushId); model.librarySet = "mine"; model.panel = nil; model.editor = EditorTarget(id: id, tab: .about) } label: {
+                if !pixel || model.currentBrush.isPixel {
+                    Button { let id = model.duplicateBrush(model.prefs.brushId); model.librarySet = model.brush(id).set; model.panel = nil; model.editor = EditorTarget(id: id, tab: .about) } label: {
                         Image(systemName: "plus").font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
@@ -57,15 +57,21 @@ struct BrushLibraryPanel: View {
         .frame(width: 150)
     }
 
-    private var vectorLibrary: some View {
+    private var vectorLibrary: some View { library(model.vectorSets, note: nil) }
+    private var pixelLibrary: some View {
+        library(model.pixelSets, note: "Pixel brushes paint pixel layers. On a vector layer, the first stroke starts a new pixel layer.")
+    }
+
+    private func library(_ sets: [(id: String, name: String)], note: String?) -> some View {
         let current = model.prefs.brushId
-        let sets = model.vectorSets
-        let set = model.librarySet.flatMap { s in sets.contains { $0.id == s } ? s : nil } ?? model.brush(current).set
+        let own = model.brush(current).set
+        let set = model.librarySet.flatMap { s in sets.contains { $0.id == s } ? s : nil } ?? (sets.contains { $0.id == own } ? own : sets.first?.id ?? "")
         return HStack(alignment: .top, spacing: 10) {
             setList(sets, current: set) { model.brushes(inSet: $0).count }
             ScrollView {
                 VStack(spacing: 4) {
                     let list = model.brushes(inSet: set)
+                    if let note { Text(note).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4) }
                     if list.isEmpty {
                         Text("Brushes you duplicate or create appear here. Tap + to copy the current brush.")
                             .font(.footnote).foregroundStyle(.secondary).padding(8)
@@ -95,37 +101,6 @@ struct BrushLibraryPanel: View {
         }
     }
 
-    private var pixelLibrary: some View {
-        let all = model.pixelBrushes
-        let names = Array(Set(all.map { $0.set })).sorted()
-        let sets = names.map { (id: $0, name: $0) }
-        let set = model.librarySet.flatMap { s in names.contains(s) ? s : nil } ?? names.first ?? ""
-        return HStack(alignment: .top, spacing: 10) {
-            setList(sets, current: set) { s in all.filter { $0.set == s }.count }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    if all.isEmpty {
-                        Text("Pixel brushes you import (.brushset, .brush, .abr) are kept here as they are, ready for pixel layers. A vector copy of each goes into the Vector library to use now.")
-                            .font(.footnote).foregroundStyle(.secondary).padding(8)
-                    } else {
-                        Text("Kept for pixel layers, which are coming. Use the vector copies in the Vector library for now.")
-                            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
-                    }
-                    ForEach(all.filter { $0.set == set }) { b in
-                        HStack {
-                            Text(b.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                            Spacer(minLength: 4)
-                            if let img = PixelBrushStore.thumbnail(b) {
-                                Image(uiImage: img).resizable().scaledToFit().frame(width: 120, height: 34)
-                            }
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
-                    }
-                }
-            }
-        }
-    }
 }
 
 // MARK: - eraser
@@ -278,7 +253,7 @@ struct LayersPanel: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                        Text("\(L.items.count) \(L.items.count == 1 ? "item" : "items")" + (L.opacity < 1 ? " · \(pct(L.opacity))" : "")).font(.caption).monospacedDigit().opacity(0.75)
+                        Text((L.isPixel ? "Pixel layer" : "\(L.items.count) \(L.items.count == 1 ? "item" : "items")") + (L.opacity < 1 ? " · \(pct(L.opacity))" : "")).font(.caption).monospacedDigit().opacity(0.75)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())

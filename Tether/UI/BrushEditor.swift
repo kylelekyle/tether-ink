@@ -113,6 +113,7 @@ final class PadCanvas: UIView {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.setFillColor(UIColor.white.cgColor)
         ctx.fill(bounds)
+        if brush.isPixel { drawPixels(); return }
         ink().setFill()
         let shape = brush.shape
         for (n, it) in items.enumerated() {
@@ -123,6 +124,21 @@ final class PadCanvas: UIView {
             let pts = lv.drawn + lv.line.provisional + lv.preview
             ctx.addPath(StrokeGeometry.path(StrokeGeometry.shapes(StrokeGeometry.bake(pts, shape), shape, seed: UInt64(items.count + 1))))
             ctx.fillPath(using: .winding)
+        }
+    }
+
+    // pixel brushes: the finished strokes are painted once, the one being drawn every frame
+    private var painted: (key: String, image: UIImage)?
+    private func drawPixels() {
+        let w = Int(bounds.width), h = Int(bounds.height), ink = hexString(self.ink())
+        let key = "\(items.count)|\(w)x\(h)|\(ink)|\(String(describing: brush))"
+        if painted?.key != key {
+            let img = PixelPaint.preview(brush, width: w, height: h, color: ink, lines: items).map { UIImage(cgImage: $0) } ?? UIImage()
+            painted = (key, img)
+        }
+        painted?.image.draw(in: bounds)
+        if let lv = live, let img = PixelPaint.preview(brush, width: w, height: h, color: ink, lines: [lv.drawn + lv.line.provisional + lv.preview]) {
+            UIImage(cgImage: img).draw(in: bounds)
         }
     }
 }
@@ -259,22 +275,22 @@ struct BrushEditorView: View {
                 SectionLabel("Shape")
                 SettingSlider(label: "Default size", value: Binding(get: { sizeToV(draft?.size ?? 1) }, set: { v in draft?.size = (vToSize(v) * 100).rounded() / 100 }),
                               range: 0...1, step: 0.001, format: { fmtSize(vToSize($0)) }, hint: "The size this brush starts at. The side bar changes it while you draw.")
-                if !d.isEraser {
+                if let px = d.pixel {
+                    SectionLabel("Paint")
+                    SettingSlider(label: "Flow", value: bind("flow"), range: 0.02...1, hint: "How much paint each dab lays down. Dabs in one stroke never build past it.")
+                    SettingSlider(label: "Pressure changes opacity", value: bind("pressureOpacity"), hint: "Light pressure paints fainter.")
+                    SettingSlider(label: "Opacity jitter", value: bind("opacityJitter"), hint: "Fades dabs at random, for a broken, dry look.")
+                    SettingSlider(label: "Edge hardness", value: bind("hardness"), hint: "For round tips: soft like an airbrush up to crisp like a pen.")
+                    if px.grain != nil {
+                        SettingSlider(label: "Grain", value: bind("grainDepth"), hint: "How strongly the paper texture shows in the paint.")
+                        SettingSlider(label: "Grain size", value: bind("grainScale"), hint: "Fine to coarse texture.")
+                    }
+                    SectionLabel("Dabs")
+                    dabSliders()
+                } else if !d.isEraser {
                     SectionLabel("Scatter")
                     Toggle("Scatter dabs along the line", isOn: Binding(get: { draft?.stamp != nil }, set: { draft?["scatter"] = $0 ? 1 : 0 }))
-                    if d.stamp != nil {
-                        SettingSlider(label: "Spacing", value: bind("spacing"), range: 0.02...2, step: 0.01,
-                                      hint: "Gap between dabs, as a share of the brush size. Low packs them into a textured line.")
-                        SettingSlider(label: "Dab size", value: bind("scale"), range: 0.05...1.5, step: 0.01,
-                                      hint: "Each dab's size next to the line's width.")
-                        SettingSlider(label: "Jitter sideways", value: bind("jitter"), range: 0...4, step: 0.01,
-                                      hint: "Scatters dabs across the line. 100% spreads them over the brush's width.")
-                        SettingSlider(label: "Jitter along", value: bind("jitterLinear"), range: 0...4, step: 0.01,
-                                      hint: "Scatters dabs forwards and back along the line.")
-                        SettingSlider(label: "Size jitter", value: bind("sizeJitter"), hint: "Makes some dabs smaller at random.")
-                        SettingSlider(label: "Rotation jitter", value: bind("rotation"), hint: "Turns each dab at random. 100% is any angle.")
-                        Toggle("Dabs turn with the line", isOn: Binding(get: { draft?.stamp?.oriented == true }, set: { draft?["oriented"] = $0 ? 1 : 0 }))
-                    }
+                    if d.stamp != nil { dabSliders() }
                 }
             case .about:
                 SectionLabel("About this brush")
@@ -284,13 +300,13 @@ struct BrushEditorView: View {
                 } else {
                     Text("\(d.name) is a built-in brush. Your changes are kept, and you can reset it at any time.").font(.footnote).foregroundStyle(.secondary)
                 }
-                Text("Every stroke is stored as a vector shape, so it stays sharp at any zoom and exports cleanly to SVG.").font(.footnote).foregroundStyle(.secondary)
+                Text(d.isPixel ? "A pixel brush paints pixel layers, dab by dab, like Procreate." : "Every stroke is stored as a vector shape, so it stays sharp at any zoom and exports cleanly to SVG.").font(.footnote).foregroundStyle(.secondary)
                 HStack {
                     if !d.isEraser {
                         Button("Duplicate brush") {
                             model.commitBrush(d)
                             let id = model.duplicateBrush(target.id)
-                            model.librarySet = "mine"
+                            model.librarySet = model.brush(id).set
                             model.editor = EditorTarget(id: id, tab: .about)
                             model.toast("Duplicated into My brushes")
                         }
@@ -301,6 +317,20 @@ struct BrushEditorView: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+
+    @ViewBuilder private func dabSliders() -> some View {
+        SettingSlider(label: "Spacing", value: bind("spacing"), range: 0.02...2, step: 0.01,
+        hint: "Gap between dabs, as a share of the brush size. Low packs them into a textured line.")
+        SettingSlider(label: "Dab size", value: bind("scale"), range: 0.05...1.5, step: 0.01,
+        hint: "Each dab's size next to the line's width.")
+        SettingSlider(label: "Jitter sideways", value: bind("jitter"), range: 0...4, step: 0.01,
+        hint: "Scatters dabs across the line. 100% spreads them over the brush's width.")
+        SettingSlider(label: "Jitter along", value: bind("jitterLinear"), range: 0...4, step: 0.01,
+        hint: "Scatters dabs forwards and back along the line.")
+        SettingSlider(label: "Size jitter", value: bind("sizeJitter"), hint: "Makes some dabs smaller at random.")
+        SettingSlider(label: "Rotation jitter", value: bind("rotation"), hint: "Turns each dab at random. 100% is any angle.")
+        Toggle("Dabs turn with the line", isOn: Binding(get: { draft?.stamp?.oriented == true }, set: { draft?["oriented"] = $0 ? 1 : 0 }))
     }
 
     private func pad(_ d: Brush) -> some View {

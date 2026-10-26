@@ -56,6 +56,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private var renderGen = 0
     private var pending: [(layer: CAShapeLayer, gen: Int)] = []
     private var pendingErase: [(path: CGPath, opacity: Double, gen: Int)] = []
+    private var pendingPx: [(layer: CALayer, gen: Int)] = []
     private var settleWork: DispatchWorkItem?
     private var displayLink: CADisplayLink?
     private var glideLink: CADisplayLink?
@@ -88,7 +89,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let id: ObjectIdentifier?
         let brush: Brush
         let erase: Bool
-        let whole: Bool
+        var whole: Bool
         var smoother: Smoother
         var line: Centerline
         var settleT = 0.0                      // motion filtering: ms either side of each point
@@ -96,6 +97,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let itemId = newID()                   // the saved stroke's id, which also seeds a scatter brush's dabs
         var stampS = 0.0                       // scatter brushes: arc length drawn by the frozen chunks
         var stampLast: V2?                     // … and where they ended
+        var px: PixelStroke?                   // painting a pixel layer
+        var pxView: CALayer?                   // its tiles on screen (canvas units)
         var frozen = 0                         // points up to here are drawn by `chunks` and never change
         var chunks: [CAShapeLayer] = []
         var raw: [V2] = []
@@ -333,7 +336,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         dropShapeEdit()
         baseActive = nil; baseKey = nil; appended = []
         pending.forEach { $0.layer.removeFromSuperlayer() }
-        pending = []; pendingErase = []
+        pendingPx.forEach { $0.layer.removeFromSuperlayer() }
+        pending = []; pendingErase = []; pendingPx = []
         CATransaction.begin(); CATransaction.setDisableActions(true)
         belowLayer.contents = nil; activeLayer.contents = nil; aboveLayer.contents = nil
         liveLayer.path = nil; revealLayer.isHidden = true; revealMask.sublayers?.forEach { $0.removeFromSuperlayer() }
@@ -422,6 +426,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if shapeEdit?.active == true { showEditedShape() }
         pending.removeAll { if $0.gen <= gen { $0.layer.removeFromSuperlayer(); return true }; return false }
         pendingErase.removeAll { $0.gen <= gen }
+        pendingPx.removeAll { if $0.gen <= gen { $0.layer.removeFromSuperlayer(); return true }; return false }
         CATransaction.commit()
         updateEraseMask()
     }
@@ -439,6 +444,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit(); updateEraseMask(); refreshOverlay() }
         guard let st = stroke, !st.whole else { liveLayer.path = nil; return }
+        if let px = st.px { pixelLive(st, px); return }
         let path: CGPath
         if st.snapped != nil {
             clearChunks(st)
@@ -497,6 +503,72 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if advance { st.stampS = s0 + len; st.stampLast = V2(pts[pts.count - 3], pts[pts.count - 2]) }
         return o
     }
+    /// A pixel stroke on screen: stretches that can no longer move are painted once into the wet paint;
+    /// only the tail near the pen is repainted each frame.
+    private func pixelLive(_ st: Stroke, _ px: PixelStroke) {
+        guard let v = st.pxView else { return }
+        v.setAffineTransform(renderedView)
+        let b = st.brush.shape
+        if st.snapped != nil {
+            px.reset()
+            px.paintTail(st.snapPts)
+        } else {
+            if st.line.settled {
+                let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom) + 12 * st.settleS
+                let lastT = st.line.t.last ?? 0
+                var e = st.frozen
+                while e + 8 < st.line.count && st.line.length - st.line.s[e + 8] > keepBack && lastT - st.line.t[e + 8] > 3 * st.settleT { e += 8 }
+                if e > st.frozen {
+                    px.advance(StrokeGeometry.bake(drawn(st, from: st.frozen, to: e), b, s0: st.line.s[st.frozen], endTaper: false))
+                    st.frozen = e
+                }
+            }
+            let from = st.frozen
+            let pts = drawn(st, from: from) + st.line.provisional + st.preview
+            px.paintTail(StrokeGeometry.bake(pts, b, s0: from < st.line.count ? st.line.s[from] : 0))
+        }
+        px.show(in: v, color: st.erase ? "#000000" : st.color)
+    }
+
+    /// Lays a finished pixel stroke onto its layer, with undo. Its tiles stay on screen until the new bitmap arrives.
+    private func finishPixel(_ st: Stroke, _ px: PixelStroke, _ d: Doc) {
+        var shape = st.brush.shape
+        shape.sim = false
+        if st.snapped != nil {
+            px.reset()
+            px.advance(st.snapPts)
+        } else {
+            emit(st, st.smoother.flush())
+            st.line.finish()
+            let from = st.frozen
+            px.clearTail()
+            px.advance(StrokeGeometry.bake(drawn(st, from: from), shape, s0: from < st.line.count ? st.line.s[from] : 0))
+        }
+        guard let v = st.pxView else { return }
+        guard let L = d.activeLayer, L.isPixel, !L.locked, !px.isEmpty else { v.removeFromSuperlayer(); return }
+        let before = L.tiles ?? [:]
+        let changed = px.commit(onto: before, color: st.color, opacity: st.opacity)
+        if changed.isEmpty { v.removeFromSuperlayer(); return }
+        var old: [Int: CGImage?] = [:]
+        for k in changed.keys { old.updateValue(before[k], forKey: k) }
+        for (k, img) in changed { L.tiles?[k] = img }
+        model.push(HistoryEntry(st.erase ? "Erase" : "Paint", undo: { for (k, img) in old { L.tiles?[k] = img } },
+                                redo: { for (k, img) in changed { L.tiles?[k] = img } }))
+        px.show(in: v, color: st.erase ? "#000000" : st.color)
+        let gen = requestRender()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        if !st.erase {
+            v.removeFromSuperlayer()
+            v.opacity = Float(st.opacity)
+            liveContainer.insertSublayer(v, below: liveGroup)
+        }
+        pendingPx.append((v, gen))
+        CATransaction.commit()
+        model.markDirty()
+        model.docVersion += 1
+        if !st.erase { model.rememberColor(st.color) }
+    }
+
     /// The stroke's points as they're drawn: with motion filtering and stabilisation settled in.
     private func drawn(_ st: Stroke, from: Int = 0, to: Int? = nil) -> [Double] {
         st.line.settled(from: from, to: to, sigmaT: st.settleT, sigmaS: st.settleS, speedRef: 0.4 / Double(zoom))
@@ -516,8 +588,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         var layers = (revealMask.sublayers ?? []).compactMap { $0 as? CAShapeLayer }
+        let pxErase = revealMask.sublayers?.contains { $0.name == "px" } ?? false
         if shapes.isEmpty {
-            revealLayer.isHidden = true
+            revealLayer.isHidden = !pxErase
             layers.forEach { $0.removeFromSuperlayer() }
             return
         }
@@ -551,6 +624,12 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if !L.visible { model.toast("This layer is hidden. Turn it on in Layers to draw on it."); return }
         let b = model.currentBrush
         let erase = model.tool == .eraser
+        // pixel brushes paint pixel layers and vector brushes draw on vector layers: the right kind is made if needed
+        var layer = L
+        if !erase && b.isPixel != L.isPixel {
+            guard let nl = model.layerFor(pixel: b.isPixel) else { return }
+            layer = nl
+        }
         let dp = toDoc(p)
         let z = Double(zoom)
         // Motion filtering and stabilisation smooth the line just behind the pen (centred, so nothing lags);
@@ -568,6 +647,17 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         endShapeEdit()
         CATransaction.begin(); CATransaction.setDisableActions(true)
         liveGroup.opacity = erase ? 1 : Float(st.opacity)
+        if layer.isPixel {
+            st.whole = false
+            st.px = PixelStroke(brush: b, seed: StrokeGeometry.seed(st.itemId), erase: erase, docW: d.w, docH: d.h)
+            let v = CALayer()
+            v.name = "px"
+            v.anchorPoint = .zero
+            v.position = .zero
+            v.setAffineTransform(renderedView)
+            if erase { v.opacity = Float(st.opacity); revealMask.addSublayer(v) } else { liveGroup.insertSublayer(v, below: liveLayer) }
+            st.pxView = v
+        }
         CATransaction.commit()
         stroke = st
         cursor = nil
@@ -651,10 +741,12 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         }
         if cancel {
             if st.whole && !st.removed.isEmpty { restore(st.removed); model.docChanged(activeOnly: true) }
+            st.pxView?.removeFromSuperlayer()
             dropLive()
             updateEraseMask(); refreshOverlay()
             return
         }
+        if let px = st.px { finishPixel(st, px, d); dropLive(); updateEraseMask(); refreshOverlay(); return }
         var shape = st.brush.shape
         shape.sim = false
         if case .ellipse? = st.snapped { shape.ts = 0; shape.te = 0 }
@@ -1498,8 +1590,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         updateLive()
     }
 
-    func demoStrokes() {
-        let base = CGPoint(x: bounds.midX - 260, y: bounds.midY - 120)
+    func demoStrokes(dy: CGFloat = 0) {
+        let base = CGPoint(x: bounds.midX - 260, y: bounds.midY - 120 + dy)
         for row in 0..<3 {
             var t = CACurrentMediaTime() * 1000
             let y0 = base.y + CGFloat(row) * 110

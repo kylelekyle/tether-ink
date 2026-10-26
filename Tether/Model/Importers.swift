@@ -76,11 +76,14 @@ enum Inflate {
 final class PBrush: NSObject, NSCoding {
     static let keys = ["minSize", "maxSize", "paintSize", "dynamicsPressureSize", "plotSmoothing", "plotMovingAverageStabilization",
                        "plotFFTSmoothingAmount", "pencilTaperStartLength", "pencilTaperEndLength", "taperStartLength", "taperEndLength",
-                       "plotSpacing", "plotJitter", "plotJitterLinear", "dynamicsJitterSize", "shapeScatter", "shapeRotation"]
-    static let flags = ["oriented", "shapeRandomise", "shapeInverted"]
+                       "plotSpacing", "plotJitter", "plotJitterLinear", "dynamicsJitterSize", "shapeScatter", "shapeRotation",
+                       "dynamicsGlazedFlow", "paintOpacity", "maxOpacity", "dynamicsPressureOpacity", "dynamicsJitterOpacity", "textureScale", "grainDepth"]
+    static let flags = ["oriented", "shapeRandomise", "shapeInverted", "textureInverted"]
+    static let strings = ["bundledShapePath", "bundledGrainPath"]
     var name = "Brush"
     var nums: [String: Double] = [:]
     var bools: [String: Bool] = [:]
+    var texts: [String: String] = [:]
     var sizeCurve: [CGPoint] = []
 
     init(name: String, nums: [String: Double]) { self.name = name; self.nums = nums }
@@ -88,6 +91,7 @@ final class PBrush: NSObject, NSCoding {
         name = (c.decodeObject(forKey: "name") as? String) ?? "Brush"
         for k in PBrush.keys where c.containsValue(forKey: k) { nums[k] = c.decodeDouble(forKey: k) }
         for k in PBrush.flags where c.containsValue(forKey: k) { bools[k] = c.decodeBool(forKey: k) }
+        for k in PBrush.strings { if let s = c.decodeObject(forKey: k) as? String { texts[k] = s } }
         sizeCurve = (c.decodeObject(forKey: "dynamicsPressureSizeCurve") as? PCurve)?.points ?? []
     }
     func encode(with c: NSCoder) {
@@ -180,7 +184,7 @@ enum PixelBrushStore {
 }
 
 enum BrushImport {
-    struct Result { var vector: [Brush] = []; var pixel: [(PixelBrush, [String: Data])] = []; var shapes: [StampShape] = []; var setName = "Imported" }
+    struct Result { var vector: [Brush] = []; var pixel: [(PixelBrush, [String: Data])] = []; var shapes: [StampShape] = []; var pixelBrushes: [Brush] = []; var setName = "Imported" }
 
     /// .brushset (many brushes in folders) or .brush (one brush at the top level).
     static func procreate(_ data: Data, fileName: String) -> Result? {
@@ -211,7 +215,10 @@ enum BrushImport {
             }
             r.vector.append(vb)
             if let t = zip.read(prefix + "QuickLook/Thumbnail.png") { files["Thumbnail.png"] = t }
-            r.pixel.append((PixelBrush(id: "p" + newID(), name: pb.name, set: setName, source: "procreate"), files))
+            let pid = "p" + newID()
+            r.pixel.append((PixelBrush(id: pid, name: pb.name, set: setName, source: "procreate"), files))
+            r.pixelBrushes.append(pixelBrush(pb, folder: pid, set: setName, hasShape: files["Shape.png"] != nil || files["Shape.jpg"] != nil,
+                                             hasGrain: files["Grain.png"] != nil || files["Grain.jpg"] != nil))
         }
         return r.vector.isEmpty ? nil : r
     }
@@ -379,7 +386,9 @@ enum BrushImport {
         for (name, d) in found {
             r.vector.append(Brush(id: "u" + newID(), name: name, set: "imp:" + setName, size: clampD(d, 0.5, sizeMax), thinning: 0.5,
                                   taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.1, motion: 0.3, note: "Imported"))
-            r.pixel.append((PixelBrush(id: "p" + newID(), name: name, set: setName, source: "abr"), [:]))
+            let pid = "p" + newID()
+            r.pixel.append((PixelBrush(id: pid, name: name, set: setName, source: "abr"), [:]))
+            r.pixelBrushes.append(pixelBrush(abrName: name, size: d, folder: pid, set: setName))
         }
         // the original file is kept once, beside the first brush
         if !r.pixel.isEmpty { r.pixel[0].1["brushes.abr"] = data }

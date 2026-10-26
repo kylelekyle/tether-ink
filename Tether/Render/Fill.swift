@@ -11,12 +11,28 @@ enum FloodFill {
     private static let wall: UInt8 = 26       // coverage that counts as ink
 
     /// Polygons (flat x, y lists, canvas units) to fill with the even-odd rule, or nil if the point is on a line.
-    static func region(_ layers: [[Item]], w: Double, h: Double, seed: V2) -> [[Double]]? {
+    static func region(_ layers: [[Item]], tiles: [[Int: CGImage]] = [], w: Double, h: Double, seed: V2) -> [[Double]]? {
         let k = min(1.0, 4096 / max(w, h, 1))
         let W = max(1, Int((w * k).rounded(.up))), H = max(1, Int((h * k).rounded(.up)))
         guard seed.x >= 0, seed.y >= 0 else { return nil }
         let sx = Int(seed.x * k), sy = Int(seed.y * k)
-        guard sx < W, sy < H, let cov = coverage(layers, W: W, H: H, k: k) else { return nil }
+        guard sx < W, sy < H, var cov = coverage(layers, W: W, H: H, k: k) else { return nil }
+        // painted pixels are walls too
+        for t in tiles {
+            for (key, img) in t {
+                let a = Tiles.alpha(img), o = Tiles.origin(key), T = Tiles.size
+                for y in 0..<T {
+                    let cy = Int(Double(o.y + y) * k)
+                    if cy >= H { break }
+                    for x in 0..<T where a[y * T + x] != 0 {
+                        let cx = Int(Double(o.x + x) * k)
+                        if cx >= W { break }
+                        let i = cy * W + cx
+                        if a[y * T + x] > cov[i] { cov[i] = a[y * T + x] }
+                    }
+                }
+            }
+        }
 
         func blocked(_ x: Int, _ y: Int) -> Bool {
             for yy in max(0, y - 1)...min(H - 1, y + 1) {

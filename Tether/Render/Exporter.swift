@@ -20,6 +20,12 @@ enum Exporter {
         if doc.bgOn { body.append("<rect id=\"background\" width=\"\(W)\" height=\"\(H)\" fill=\"\(doc.bg)\"/>") }
         for L in doc.layers where L.visible {
             var content = "", erasers: [String] = []
+            if let t = L.tiles, !t.isEmpty,
+               let img = DocRenderer.renderDoc(layers: [LayerSnap(items: [], visible: true, opacity: 1, tiles: t)], w: doc.w, h: doc.h, bg: nil, scale: 1),
+               let png = UIImage(cgImage: img).pngData() {
+                // pixel layers go in as images
+                content += "<image href=\"data:image/png;base64,\(png.base64EncodedString())\" x=\"0\" y=\"0\" width=\"\(W)\" height=\"\(H)\"/>"
+            }
             func flushErase() {
                 if erasers.isEmpty { return }
                 mk += 1

@@ -83,7 +83,7 @@ jobs:
           xcrun simctl bootstatus "$SIM" -b
           xcrun simctl install "$SIM" build-sim/Build/Products/Debug-iphonesimulator/TetherInk.app
           mkdir -p shots
-          for d in draw scatter fast midstroke arch fill size shape library editor global layers nolayers smoothing actions colour colourclassic gallery; do
+          for d in draw scatter pixel pixellib fast midstroke arch fill size shape library editor global layers nolayers smoothing actions colour colourclassic gallery; do
             xcrun simctl launch --terminate-running-process "$SIM" ink.tether.app -demo $d
             sleep 7
             xcrun simctl io "$SIM" screenshot "shots/$d.png"

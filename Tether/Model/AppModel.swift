@@ -114,7 +114,7 @@ final class AppModel {
     func baseBrush(_ id: String) -> Brush? { Brush.builtIn.first { $0.id == id } ?? Brush.erasers.first { $0.id == id } }
     func isCustom(_ id: String) -> Bool { prefs.customBrushes.contains { $0.id == id } }
     func brushes(inSet set: String) -> [Brush] {
-        if set == "mine" || set.hasPrefix("imp:") { return prefs.customBrushes.filter { $0.set == set }.map { brush($0.id) } }
+        if set == "mine" || set.hasPrefix("imp:") || set.hasPrefix("pix:") { return prefs.customBrushes.filter { $0.set == set }.map { brush($0.id) } }
         return Brush.builtIn.filter { $0.set == set }.map { brush($0.id) }
     }
     /// The vector library's sets: built in, then each imported set, then the brushes you made.
@@ -128,9 +128,33 @@ final class AppModel {
         out.append(("mine", "My brushes"))
         return out
     }
+    /// The pixel library's sets: the built-in basics, then each imported set (and copies you made).
+    var pixelSets: [(id: String, name: String)] {
+        var out: [(id: String, name: String)] = [("pixel", "Basics")]
+        var seen = Set<String>()
+        for b in prefs.customBrushes where b.set.hasPrefix("pix:") && !seen.contains(b.set) {
+            seen.insert(b.set)
+            out.append((b.set, String(b.set.dropFirst(4))))
+        }
+        return out
+    }
     func refreshPixelBrushes() {
         let list = PixelBrushStore.list()
         if list != pixelBrushes { pixelBrushes = list }
+        // brushes imported before pixel layers existed get their pixel brush now
+        var added = false
+        for pb in list where !prefs.customBrushes.contains(where: { $0.id == pb.id }) {
+            if pb.source == "procreate", let a = PixelBrushStore.file(pb.id, ["Brush.archive"]),
+               let p = KeyedArchive.root(a, classes: ["SilicaBrush": PBrush.self, "ValkyrieMagnitudinalCurve": PCurve.self]) as? PBrush {
+                prefs.customBrushes.append(BrushImport.pixelBrush(p, folder: pb.id, set: pb.set,
+                                                                  hasShape: PixelBrushStore.file(pb.id, ["Shape.png", "Shape.jpg"]) != nil,
+                                                                  hasGrain: PixelBrushStore.file(pb.id, ["Grain.png", "Grain.jpg"]) != nil))
+            } else {
+                prefs.customBrushes.append(BrushImport.pixelBrush(abrName: pb.name, size: 20, folder: pb.id, set: pb.set))
+            }
+            added = true
+        }
+        if added { schedulePrefsSave() }
     }
 
     // MARK: importing
@@ -169,11 +193,12 @@ final class AppModel {
         guard let r = r else { toast("No brushes found in that file"); return }
         prefs.customBrushes.append(contentsOf: r.vector)
         prefs.stampShapes.append(contentsOf: r.shapes)
+        prefs.customBrushes.append(contentsOf: r.pixelBrushes)
         schedulePrefsSave()
         refreshPixelBrushes()
         libraryKind = "vector"
         librarySet = "imp:" + r.setName
-        toast("Imported \(r.vector.count) brushes into \(r.setName): vector copies, originals in Pixel brushes")
+        toast("Imported \(r.vector.count) brushes into \(r.setName), in both the Vector and Pixel libraries")
     }
     var currentBrushId: String { tool == .eraser ? prefs.eraserId : prefs.brushId }
     var currentBrush: Brush { brush(currentBrushId) }
@@ -200,7 +225,7 @@ final class AppModel {
             prefs.brushOverrides[b.id] = nil
         } else if let base = baseBrush(b.id) {
             var o: [String: Double] = [:]
-            for k in Brush.keys + Brush.stampKeys where abs(b[k] - base[k]) > 1e-9 { o[k] = b[k] }
+            for k in Brush.keys + Brush.stampKeys + Brush.pixelKeys where abs(b[k] - base[k]) > 1e-9 { o[k] = b[k] }
             prefs.brushOverrides[b.id] = o.isEmpty ? nil : o
         }
         schedulePrefsSave()
@@ -209,7 +234,7 @@ final class AppModel {
     @discardableResult func duplicateBrush(_ id: String) -> String {
         var b = brush(id)
         b.id = "u" + newID()
-        b.set = "mine"
+        b.set = b.isPixel ? "pix:My brushes" : "mine"
         b.mode = nil
         b.note = nil
         b.name = b.name.hasSuffix(" copy") ? b.name : b.name + " copy"
@@ -220,6 +245,8 @@ final class AppModel {
         return b.id
     }
     func deleteBrush(_ id: String) {
+        // an imported pixel brush takes its kept original with it
+        if let pb = pixelBrushes.first(where: { $0.id == id }) { PixelBrushStore.delete(pb); refreshPixelBrushes() }
         prefs.customBrushes.removeAll { $0.id == id }
         prefs.brushOverrides[id] = nil
         if prefs.brushId == id { prefs.brushId = "studio" }
@@ -451,12 +478,26 @@ final class AppModel {
             return
         }
         let layers = d.layers.filter { $0.visible }.map { $0.items }
+        let pixels = d.layers.filter { $0.visible }.compactMap { $0.tiles }
         let w = d.w, h = d.h
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let polys = FloodFill.region(layers, w: w, h: h, seed: p)
+            let polys = FloodFill.region(layers, tiles: pixels, w: w, h: h, seed: p)
             DispatchQueue.main.async {
                 guard let self = self, self.doc === d else { return }
                 guard let polys = polys else { self.toast("Drop the colour inside an area, not on a line"); return }
+                if L.isPixel {
+                    // a pixel layer gets the colour painted in, under what's already there
+                    let before = L.tiles ?? [:]
+                    let changed = PixelPaint.fill(before, polygons: polys, color: colour, opacity: opacity, w: w, h: h)
+                    var old: [Int: CGImage?] = [:]
+                    for k in changed.keys { old.updateValue(before[k], forKey: k) }
+                    for (k, img) in changed { L.tiles?[k] = img }
+                    self.push(HistoryEntry("Fill", undo: { for (k, img) in old { L.tiles?[k] = img } }, redo: { for (k, img) in changed { L.tiles?[k] = img } }))
+                    self.docChanged(activeOnly: true)
+                    self.rememberColor(colour)
+                    if !self.fillOffer && !self.fillMode { self.fillOffer = true }
+                    return
+                }
                 let item = Item.fill(FillItem(id: newID(), c: colour, o: opacity, p: polys))
                 L.items.insert(item, at: 0)
                 self.push(HistoryEntry("Fill", undo: { L.items.removeAll { $0.id == item.id } }, redo: { L.items.insert(item, at: 0) }))
@@ -478,6 +519,20 @@ final class AppModel {
         push(HistoryEntry("New layer", undo: { d.layers.removeAll { $0 === L }; d.active = prev }, redo: { d.layers.insert(L, at: min(i + 1, d.layers.count)); d.active = L.id }))
         docChanged()
     }
+    /// The current layer if it's the right kind (an empty one just changes kind), else a new one of that kind above it.
+    func layerFor(pixel: Bool) -> Layer? {
+        guard let d = doc, let L = d.activeLayer else { return nil }
+        if L.isPixel == pixel { return L }
+        if L.isEmpty { L.tiles = pixel ? [:] : nil; docVersion += 1; return L }
+        let n = d.layers.count + 1
+        let N = Layer(name: pixel ? "Pixel layer \(n)" : "Layer \(n)", pixel: pixel), i = d.activeIndex, prev = d.active
+        d.layers.insert(N, at: i + 1); d.active = N.id
+        push(HistoryEntry(pixel ? "New pixel layer" : "New layer", undo: { d.layers.removeAll { $0 === N }; d.active = prev },
+                          redo: { d.layers.insert(N, at: min(i + 1, d.layers.count)); d.active = N.id }))
+        docChanged()
+        toast(pixel ? "New pixel layer for this pixel brush" : "New vector layer for this vector brush")
+        return N
+    }
     /// Copies a layer once, just above it (the copy starts unlocked).
     func duplicateLayer(_ src: Layer) {
         guard let d = doc, let i = d.layers.firstIndex(where: { $0 === src }) else { return }
@@ -489,10 +544,11 @@ final class AppModel {
     func clearLayer() {
         guard let d = doc, let L = d.activeLayer else { return }
         if L.locked { toast("This layer is locked"); return }
-        let old = L.items
-        if old.isEmpty { return }
+        let old = L.items, oldTiles = L.tiles
+        if L.isEmpty { return }
         L.items = []
-        push(HistoryEntry("Clear layer", undo: { L.items = old }, redo: { L.items = [] }))
+        if L.isPixel { L.tiles = [:] }
+        push(HistoryEntry("Clear layer", undo: { L.items = old; L.tiles = oldTiles }, redo: { L.items = []; if oldTiles != nil { L.tiles = [:] } }))
         docChanged()
     }
     /// Any layer can go, even the last one: the canvas and background stay.
@@ -586,7 +642,7 @@ final class AppModel {
         let ink = d.layers[0]; ink.name = "Line"
         let col = Layer(name: "Colour")
         d.layers.insert(col, at: 0); d.active = ink.id
-        let rows = Brush.builtIn.filter { $0.id != "round" }
+        let rows = Brush.builtIn.filter { $0.id != "round" && !$0.isPixel }
         let top = 140.0, gap = (d.h - 250) / Double(rows.count - 1)
         for (ri, b) in rows.enumerated() {
             for (ci, m) in [0.4, 0.7, 1.0, 1.6, 2.4].enumerated() {
@@ -624,6 +680,8 @@ final class AppModel {
         case "gallery": refreshGallery(); showGallery = true
         case "draw": canvas?.demoStrokes()
         case "scatter": prefs.brushId = "stipple"; canvas?.demoStrokes()
+        case "pixel": prefs.brushId = "px-pencil"; canvas?.demoStrokes(); prefs.brushId = "px-chalk"; prefs.color = "#c0392b"; canvas?.demoStrokes(dy: 330)
+        case "pixellib": libraryKind = "pixel"; panel = .brushes
         case "fast": canvas?.demoFast()
         case "midstroke": canvas?.demoMidstroke()
         case "arch": canvas?.demoArch()

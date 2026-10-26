@@ -1,10 +1,12 @@
 import Foundation
+import CoreGraphics
 
 /// Fast JSON writer for drawings (the same format as `Doc`'s Codable output).
 /// Saving works from a snapshot, so it runs off the main thread while you keep drawing.
 enum DocWriter {
     struct LayerShot {
         let id: String, name: String, visible: Bool, opacity: Double, items: [Item], locked: Bool
+        var tiles: [Int: CGImage]? = nil
     }
     struct Snapshot {
         let v: Int, id: String, name: String, w: Double, h: Double, bg: String, bgOn: Bool
@@ -14,9 +16,9 @@ enum DocWriter {
         init(_ d: Doc) {
             v = d.v; id = d.id; name = d.name; w = d.w; h = d.h; bg = d.bg; bgOn = d.bgOn
             created = d.created; updated = d.updated; active = d.active; kind = d.kind; stamps = d.stamps
-            layers = d.layers.map { LayerShot(id: $0.id, name: $0.name, visible: $0.visible, opacity: $0.opacity, items: $0.items, locked: $0.locked) }
+            layers = d.layers.map { LayerShot(id: $0.id, name: $0.name, visible: $0.visible, opacity: $0.opacity, items: $0.items, locked: $0.locked, tiles: $0.tiles) }
         }
-        var renderLayers: [LayerSnap] { layers.map { LayerSnap(items: $0.items, visible: $0.visible, opacity: $0.opacity) } }
+        var renderLayers: [LayerSnap] { layers.map { LayerSnap(items: $0.items, visible: $0.visible, opacity: $0.opacity, tiles: $0.tiles) } }
     }
 
     static func json(_ d: Snapshot) -> Data {
@@ -52,6 +54,18 @@ enum DocWriter {
             w.key("visible"); w.bool(l.visible); w.comma()
             w.key("opacity"); w.num(l.opacity); w.comma()
             if l.locked { w.key("locked"); w.bool(true); w.comma() }
+            if let t = l.tiles {
+                w.key("px"); w.raw("{")
+                var first = true
+                for (k, img) in t.sorted(by: { $0.key < $1.key }) {
+                    guard let png = Tiles.png(img) else { continue }
+                    if !first { w.comma() }
+                    first = false
+                    w.str(Tiles.name(k)); w.o.append(58)
+                    w.o.append(34); w.o.append(contentsOf: png.base64EncodedData()); w.o.append(34)
+                }
+                w.raw("}"); w.comma()
+            }
             w.key("items"); w.raw("[")
             for (ii, it) in l.items.enumerated() {
                 if ii > 0 { w.comma() }

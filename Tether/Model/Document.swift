@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // Drawings are saved as .tether.json. Version 2 stores each stroke as its centerline with the radius baked in;
 // version 1 files (pressure instead of radius) are converted when they load.
@@ -135,11 +136,15 @@ final class Layer: Codable, Identifiable {
     var opacity: Double
     var items: [Item]
     var locked = false   // locked layers can't be drawn on, erased or cleared
+    /// Pixel layers hold painted tiles (see `Tiles`) instead of vector items; nil for a vector layer.
+    var tiles: [Int: CGImage]? = nil
+    var isPixel: Bool { tiles != nil }
+    var isEmpty: Bool { items.isEmpty && (tiles?.isEmpty ?? true) }
 
-    init(name: String) { id = newID(); self.name = name; visible = true; opacity = 1; items = [] }
-    init(copy l: Layer, name: String) { id = newID(); self.name = name; visible = l.visible; opacity = l.opacity; items = l.items }
+    init(name: String, pixel: Bool = false) { id = newID(); self.name = name; visible = true; opacity = 1; items = []; if pixel { tiles = [:] } }
+    init(copy l: Layer, name: String) { id = newID(); self.name = name; visible = l.visible; opacity = l.opacity; items = l.items; tiles = l.tiles }
 
-    enum CodingKeys: String, CodingKey { case id, name, visible, opacity, items, locked }
+    enum CodingKeys: String, CodingKey { case id, name, visible, opacity, items, locked, px }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? newID()
@@ -155,12 +160,14 @@ final class Layer: Codable, Identifiable {
         }
         items = list
         locked = (try? c.decode(Bool.self, forKey: .locked)) ?? false
+        if let px = try? c.decode([String: String].self, forKey: .px) { tiles = Tiles.decode(px) }
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id); try c.encode(name, forKey: .name); try c.encode(visible, forKey: .visible)
         try c.encode(opacity, forKey: .opacity); try c.encode(items, forKey: .items)
         if locked { try c.encode(true, forKey: .locked) }   // only written when set, so files stay as they were
+        if let t = tiles { try c.encode(Tiles.encode(t), forKey: .px) }
     }
     var hasErase: Bool { items.contains { $0.isErase } }
 }

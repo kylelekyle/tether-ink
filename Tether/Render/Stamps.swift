@@ -61,23 +61,22 @@ extension StrokeGeometry {
         return s
     }
 
-    /// Dabs along the (x, y, radius) line. Dab j sits at arc length j × spacing and draws its randomness from (seed, j),
+    /// One dab: where it lands, its radius and turn, the line's own radius there, and a spare random number.
+    struct Dab { var x: Double; var y: Double; var r: Double; var angle: Double; var lineR: Double; var rnd: Double }
+
+    /// Dabs along the (x, y, radius) line. Dab j sits at arc length j × step and draws its randomness from (seed, j),
     /// so any stretch of the line (s0 up to, not including, `end`) produces exactly the dabs the whole line would there.
-    static func stamps(_ pts: [Double], _ k: StampParams, size: Double, seed: UInt64, s0: Double = 0, end: Double? = nil) -> [[V2]] {
+    static func dabs(_ pts: [Double], _ k: StampParams, step: Double, seed: UInt64, s0: Double = 0, end: Double? = nil, limit: Int = 20_000) -> [Dab] {
         let n = pts.count / 3
-        guard n > 0 else { return [] }
+        guard n > 0, step > 0 else { return [] }
         func P(_ i: Int) -> V2 { V2(pts[i * 3], pts[i * 3 + 1]) }
         var s = [Double](repeating: s0, count: n)
         for i in 1..<max(1, n) { s[i] = s[i - 1] + P(i).dist(P(i - 1)) }
         let stop = end ?? (s[n - 1] + 1e-9)
-        // traced shapes are many polygons each, so they space out a little more to keep long strokes light
-        let step = max(0.5, (k.shape == nil ? k.spacing : max(k.spacing, 0.12)) * size)
-        let shape = k.shape.flatMap { StampRegistry.shared.get($0) }
-        var out: [[V2]] = []
+        var out: [Dab] = []
         var j = Int((s0 / step).rounded(.up))
         var i = 0
-        var count = 0
-        while count < 20_000 {
+        while out.count < limit {
             let sj = Double(j) * step
             if sj >= stop { break }
             while i < n - 1 && s[i + 1] < sj { i += 1 }
@@ -90,13 +89,26 @@ extension StrokeGeometry {
             let t = d.length > 1e-9 ? d / d.length : V2(1, 0)
             let nrm = V2(-t.y, t.x)
             var rng = SplitMix(x: seed ^ (UInt64(truncatingIfNeeded: j) &* 0x9E37_79B9_7F4A_7C15))
-            let a = rng.unit(), b = rng.unit(), c = rng.unit(), e = rng.unit()
+            let a = rng.unit(), b = rng.unit(), c = rng.unit(), e = rng.unit(), f = rng.unit()
             let width = 2 * r
             let centre = p + nrm * (k.jitter * width * (a - 0.5)) + t * (k.jitterLinear * width * (b - 0.5))
-            let rr = r * k.scale * (1 - k.sizeJitter * c)
             var ang = k.oriented ? atan2(t.y, t.x) : 0
             ang += k.rotation * 2 * Double.pi * (e - 0.5)
-            let ca = cos(ang), sa = sin(ang)
+            out.append(Dab(x: centre.x, y: centre.y, r: r * k.scale * (1 - k.sizeJitter * c), angle: ang, lineR: r, rnd: f))
+            j += 1
+        }
+        return out
+    }
+
+    /// A scatter stroke's dabs as polygons.
+    static func stamps(_ pts: [Double], _ k: StampParams, size: Double, seed: UInt64, s0: Double = 0, end: Double? = nil) -> [[V2]] {
+        // traced shapes are many polygons each, so they space out a little more to keep long strokes light
+        let step = max(0.5, (k.shape == nil ? k.spacing : max(k.spacing, 0.12)) * size)
+        let shape = k.shape.flatMap { StampRegistry.shared.get($0) }
+        var out: [[V2]] = []
+        for dab in dabs(pts, k, step: step, seed: seed, s0: s0, end: end) {
+            let centre = V2(dab.x, dab.y), rr = dab.r
+            let ca = cos(dab.angle), sa = sin(dab.angle)
             if let sh = shape {
                 let w2 = 2 * rr
                 for poly in sh.p where poly.count >= 6 {
@@ -117,8 +129,6 @@ extension StrokeGeometry {
                     return V2(centre.x + rr * cos(an), centre.y + rr * sin(an))
                 })
             }
-            j += 1
-            count += 1
         }
         return out
     }
