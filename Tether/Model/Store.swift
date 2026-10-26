@@ -44,27 +44,40 @@ final class Store {
         return try? JSONDecoder().decode(Doc.self, from: data)
     }
 
-    /// Encodes on the calling (main) thread, writes in the background.
-    func save(_ doc: Doc, thumbnail: UIImage?) {
-        guard let data = try? JSONEncoder().encode(doc) else { return }
+    /// Takes a snapshot on the calling thread (cheap: the stroke arrays are shared, not copied),
+    /// then writes the file and renders the thumbnail in the background.
+    func save(_ doc: Doc) {
+        let snap = DocWriter.Snapshot(doc)
         let meta = DocMeta(id: doc.id, name: doc.name, w: doc.w, h: doc.h, created: doc.created, updated: doc.updated)
-        let metaData = try? JSONEncoder().encode(meta)
-        let thumbData = thumbnail?.jpegData(compressionQuality: 0.82)
         let id = doc.id
+        thumbCache.removeObject(forKey: id as NSString)
         io.async { [self] in
+            let data = DocWriter.json(snap)
             try? data.write(to: docURL(id), options: .atomic)
-            if let m = metaData { try? m.write(to: metaURL(id), options: .atomic) }
-            if let t = thumbData { try? t.write(to: thumbURL(id), options: .atomic) }
+            if let m = try? JSONEncoder().encode(meta) { try? m.write(to: metaURL(id), options: .atomic) }
+            let k = min(1, 360 / max(snap.w, snap.h))
+            if let img = DocRenderer.renderDoc(layers: snap.renderLayers, w: snap.w, h: snap.h, bg: snap.bgOn ? snap.bg : "#ffffff", scale: k),
+               let t = UIImage(cgImage: img).jpegData(compressionQuality: 0.82) {
+                try? t.write(to: thumbURL(id), options: .atomic)
+            }
+            thumbCache.removeObject(forKey: id as NSString)
         }
     }
 
     func delete(id: String) {
         io.async { [self] in
             for u in [docURL(id), metaURL(id), thumbURL(id)] { try? FileManager.default.removeItem(at: u) }
+            thumbCache.removeObject(forKey: id as NSString)
         }
     }
 
     func waitForWrites() { io.sync {} }
 
-    func thumbnail(id: String) -> UIImage? { UIImage(contentsOfFile: thumbURL(id).path) }
+    private let thumbCache = NSCache<NSString, UIImage>()
+    func thumbnail(id: String) -> UIImage? {
+        if let c = thumbCache.object(forKey: id as NSString) { return c }
+        guard let img = UIImage(contentsOfFile: thumbURL(id).path) else { return nil }
+        thumbCache.setObject(img, forKey: id as NSString)
+        return img
+    }
 }

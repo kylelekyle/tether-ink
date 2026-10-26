@@ -22,7 +22,7 @@ final class EngineTests: XCTestCase {
     }
 
     func testSmootherFinishesAtThePencilWithoutRope() {
-        var sm = Smoother(SmoothParams(mf: 0.5, mfx: 0.5, st: 0.5, sts: 0.5, sl: 0.5, slp: 0.3, rope: 0, catchUp: false))
+        var sm = Smoother(SmoothParams(mf: 0.5, mfx: 0.5, st: 0.5, sts: 0.5, sl: 0.5, slp: 0.3, rope: 0, catchUp: true))
         var last: Sample? = nil
         for i in 0...100 {
             let out = sm.push(Sample(x: Double(i) * 3, y: 50 + sin(Double(i) / 10) * 20, p: 0.5, t: Double(i) * 4))
@@ -31,6 +31,25 @@ final class EngineTests: XCTestCase {
         if let l = sm.flush().last { last = l }
         XCTAssertNotNil(last)
         XCTAssertEqual(last!.x, 300, accuracy: 0.5)
+    }
+
+    func testWithoutCatchUpLiftingAddsNothing() {
+        var sm = Smoother(SmoothParams(mf: 1, mfx: 0, st: 1, sts: 1, sl: 1, slp: 1, rope: 0, catchUp: false))
+        for i in 0...100 { _ = sm.push(Sample(x: Double(i) * 3, y: 0, p: 0.5, t: Double(i) * 4)) }
+        XCTAssertTrue(sm.flush().isEmpty)
+    }
+
+    func testFullSmoothingRemovesTremor() {
+        // 9 Hz tremor of ±2 pt on a slow horizontal line, 240 Hz samples
+        var sm = Smoother(SmoothParams(mf: 1, mfx: 1, st: 1, sts: 1, sl: 1, slp: 1, rope: 0, catchUp: true))
+        var out: [Sample] = []
+        for i in 0..<900 {
+            let t = Double(i) * 1000 / 240
+            out += sm.push(Sample(x: t * 0.15, y: 100 + 2 * sin(2 * .pi * 9 * t / 1000), p: 0.5, t: t))
+        }
+        let mid = out.filter { $0.x > 60 && $0.x < 400 }
+        XCTAssertFalse(mid.isEmpty)
+        XCTAssertLessThan(mid.map { abs($0.y - 100) }.max() ?? 99, 0.25)
     }
 
     func testRopeHoldsTheLineBackByTheStringLength() {
@@ -61,6 +80,45 @@ final class EngineTests: XCTestCase {
         var loop: [V2] = []
         for i in 0...64 { let t = Double(i) / 64 * .pi * 2; loop.append(V2(100 + cos(t) * 80, 50 + sin(t) * 30)) }
         if case .ellipse = ShapeFit.fit(loop) {} else { XCTFail("expected an ellipse") }
+    }
+
+    func testEllipseFitLandsOnTheDrawnLoop() {
+        // drawn unevenly (fast and slow parts), a little short of a full turn, rotated
+        var pts: [V2] = []
+        for i in 0..<150 {
+            let u = Double(i) / 149
+            let t = 0.93 * 2 * .pi * (u + 0.12 * sin(2 * .pi * u))
+            let ex = cos(t) * 150, ey = sin(t) * 80, a = 0.4
+            pts.append(V2(300 + ex * cos(a) - ey * sin(a), 200 + ex * sin(a) + ey * cos(a)))
+        }
+        guard case .ellipse(let e) = ShapeFit.fit(pts) else { return XCTFail("expected an ellipse") }
+        XCTAssertEqual(e.c.x, 300, accuracy: 1.5)
+        XCTAssertEqual(e.c.y, 200, accuracy: 1.5)
+        XCTAssertEqual(max(e.r1, e.r2), 150, accuracy: 1.5)
+        XCTAssertEqual(min(e.r1, e.r2), 80, accuracy: 1.5)
+        XCTAssertFalse(e.circle)
+        // the outline starts where the stroke started
+        let first = e.point(e.start)
+        XCTAssertLessThan(first.dist(pts[0]), 2)
+    }
+
+    func testFastWriterMatchesTheDecoder() throws {
+        let d = AppModel.makeSampler()
+        let data = DocWriter.json(DocWriter.Snapshot(d))
+        let back = try JSONDecoder().decode(Doc.self, from: data)
+        XCTAssertEqual(back.layers.count, d.layers.count)
+        for (a, b) in zip(back.layers, d.layers) {
+            XCTAssertEqual(a.items.count, b.items.count)
+            for (x, y) in zip(a.items, b.items) {
+                if case .stroke(let s1) = x, case .stroke(let s2) = y {
+                    XCTAssertEqual(s1.id, s2.id); XCTAssertEqual(s1.c, s2.c); XCTAssertEqual(s1.b, s2.b)
+                    XCTAssertEqual(s1.p.count, s2.p.count)
+                    for (u, v) in zip(s1.p, s2.p) { XCTAssertEqual(u, v, accuracy: 0.0006) }
+                }
+            }
+        }
+        XCTAssertEqual(back.name, d.name)
+        XCTAssertEqual(back.active, d.active)
     }
 
     func testReadsWebBackupFormat() throws {

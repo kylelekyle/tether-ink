@@ -11,121 +11,208 @@ struct Sample {
 /// Effective smoothing for one stroke (brush settings combined with the global ones).
 struct SmoothParams {
     var mf: Double = 0       // motion filtering amount
-    var mfx: Double = 0.5    // motion filtering expression
+    var mfx: Double = 0.5    // motion filtering expression (keeps fast flicks crisp; never adds wobble back)
     var st: Double = 0       // stabilisation amount
-    var sts: Double = 0.5    // stabilisation speed influence
+    var sts: Double = 0.5    // stabilisation speed influence (more smoothing when drawing fast)
     var sl: Double = 0       // streamline amount
     var slp: Double = 0      // streamline pressure
     var rope: Double = 0     // rope length in screen points, 0 = off
-    var catchUp: Bool = false
-}
+    var catchUp: Bool = false  // on lift, run every stage on to the pencil
 
-private func median(_ a: [Double]) -> Double {
-    let s = a.sorted(), n = s.count
-    if n == 0 { return 0 }
-    return n % 2 == 1 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+    /// Light enough that predicted touches help rather than make the line's head flicker.
+    var light: Bool { mf < 0.05 && st < 0.05 && sl < 0.05 && rope < 0.5 }
+    /// Something lags behind the pencil, so the line should keep gliding while the pencil rests.
+    var lags: Bool { mf >= 0.01 || st >= 0.01 || sl >= 0.01 || slp >= 0.01 }
 }
 
 /// Raw pencil samples pass through, in order:
-/// 1. Motion filtering – sliding median over a short time window: removes the extremes of wobble rather than averaging them.
-/// 2. Stabilisation    – moving average over a stretch of path that grows with drawing speed.
-/// 3. Streamline       – the line eases toward the pencil with a time lag; a separate lag for pressure.
+/// 1. Motion filtering – Gaussian-weighted average over a short time window: removes hand tremor (8–12 Hz) cleanly.
+/// 2. Stabilisation    – triangle-weighted average over a stretch of path (arc length), wider when drawing fast.
+/// 3. Streamline       – the line eases toward the pencil through two cascaded lags (critically damped, no overshoot);
+///                       a separate lag for pressure.
 /// 4. Rope             – the line only moves when the pencil pulls a string of fixed length taut.
+/// With catch-up on, every stage runs on smoothly to the pencil when it lifts; otherwise the line stays as drawn.
 /// A value type, so a copy can be pushed ahead with predicted touches without disturbing the real stroke.
 struct Smoother {
     let o: SmoothParams
+    // motion filtering
+    private let mfW: Double
+    private var mfCur: Double
     private var mfBuf: [Sample] = []
-    private var stBuf: [Sample] = []
-    private var stLen = 0.0
+    private var mfPrev: Sample? = nil
+    private var mfSpeed = 0.0
+    // stabilisation
+    static let stStep = 1.5
+    private var stPts: [Sample] = []
+    private var stLast: Sample? = nil
+    private var stHead: Sample? = nil
+    private var stOutLast: Sample? = nil
+    private var stN = 1.0
+    private var stMoveT = 0.0
+    private var stPrevT = 0.0
     private var speed = 0.0
     private var prev: Sample? = nil
-    private var sl: Sample? = nil
+    // streamline
+    private var slA: Sample? = nil
+    private var slB: Sample? = nil
     private var slTarget: Sample? = nil
+    // rope
     private(set) var tip: Sample? = nil
     private(set) var pen: Sample? = nil
     private(set) var last: Sample? = nil
+    private var lastT = -Double.greatestFiniteMagnitude
 
-    init(_ o: SmoothParams) { self.o = o }
+    init(_ o: SmoothParams) {
+        self.o = o
+        let w: Double = 16 + pow(o.mf, 1.2) * 150
+        mfW = w
+        mfCur = w
+    }
 
     // MARK: motion filtering
+    private func mfEval(_ tc: Double, _ sig: Double) -> Sample {
+        var sw = 0.0, sx = 0.0, sy = 0.0, sp = 0.0
+        let inv = 1 / (2 * sig * sig)
+        for q in mfBuf {
+            let d = q.t - tc
+            let w = exp(-d * d * inv)
+            sw += w; sx += w * q.x; sy += w * q.y; sp += w * q.p
+        }
+        if sw < 1e-12 { return tc < mfBuf[0].t ? mfBuf[0] : mfBuf[mfBuf.count - 1] }
+        return Sample(x: sx / sw, y: sy / sw, p: sp / sw, t: 0)
+    }
     private mutating func mfPush(_ q: Sample, _ out: inout [Sample]) {
         if o.mf < 0.01 { out.append(q); return }
-        let window = 12 + o.mf * 110
+        if let pv = mfPrev {
+            let dt = max(1, q.t - pv.t)
+            let vi = ((q.x - pv.x) * (q.x - pv.x) + (q.y - pv.y) * (q.y - pv.y)).squareRoot() / dt
+            mfSpeed += (vi - mfSpeed) * min(1, dt / 80)
+        }
+        mfPrev = q
         mfBuf.append(q)
-        while mfBuf.count > 2 && q.t - mfBuf[0].t > window { mfBuf.removeFirst() }
-        out.append(mfOut())
-    }
-    private func mfOut() -> Sample {
-        let n = mfBuf.count
-        if n == 1 { return mfBuf[0] }
-        let mx = median(mfBuf.map { $0.x }), my = median(mfBuf.map { $0.y })
-        let c = mfBuf[(n - 1) / 2]
-        let e = o.mfx * (1 - 0.6 * o.mf)
-        return Sample(x: mx + e * (c.x - mx), y: my + e * (c.y - my), p: c.p, t: c.t)
+        while mfBuf.count > 2 && q.t - mfBuf[0].t > mfW { mfBuf.removeFirst() }
+        let fast: Double = min(1, mfSpeed / 1.2)
+        mfCur = mfW * (1 - o.mfx * 0.75 * fast)
+        var r = mfEval(q.t - mfCur / 2, mfCur / 5)
+        r.t = q.t
+        out.append(r)
     }
     private mutating func mfFlush(_ out: inout [Sample]) {
-        if o.mf < 0.01 { return }
-        while mfBuf.count > 1 { mfBuf.removeFirst(); out.append(mfOut()) }
+        guard o.mf >= 0.01, let end = mfBuf.last else { return }
+        let tc0 = end.t - mfCur / 2, s0 = mfCur / 5
+        let sEnd: Double = 6 * max(0, 1 - mfSpeed / 0.5) + 0.5   // slow lift: end on the steadied point, fast flick: on the pencil
+        for i in 1...10 {
+            let f = Double(i) / 10
+            var r = mfEval(tc0 + (end.t - tc0) * f, s0 + (sEnd - s0) * f)
+            r.t = end.t
+            out.append(r)
+        }
     }
 
     // MARK: stabilisation
+    private func stOut(_ n: Double, t: Double) -> Sample {
+        let m = stPts.count
+        let nn = max(1, min(Double(m), n))
+        let c = (nn - 1) / 2, half = nn / 2 + 0.5
+        var sw = 0.0, sx = 0.0, sy = 0.0, sp = 0.0
+        let top = min(m - 1, Int(nn.rounded(.up)))
+        for j in 0...top {
+            let w = half - abs(Double(j) - c)
+            if w <= 0 { continue }
+            let q = stPts[m - 1 - j]
+            sw += w; sx += w * q.x; sy += w * q.y; sp += w * q.p
+        }
+        return Sample(x: sx / sw, y: sy / sw, p: sp / sw, t: t)
+    }
     private mutating func stPush(_ q: Sample, _ out: inout [Sample]) {
         if let pv = prev {
             let dt = max(1, q.t - pv.t)
             let vi = ((q.x - pv.x) * (q.x - pv.x) + (q.y - pv.y) * (q.y - pv.y)).squareRoot() / dt
-            speed += (vi - speed) * 0.25
+            speed += (vi - speed) * min(1, dt / 60)
         }
         prev = q
         if o.st < 0.01 { out.append(q); return }
-        let k = clampD(speed / 0.6, 0.25, 3)
-        let reach = o.st * 70 * (1 + o.sts * (k - 1))
-        if let l = stBuf.last { stLen += ((q.x - l.x) * (q.x - l.x) + (q.y - l.y) * (q.y - l.y)).squareRoot() }
-        stBuf.append(q)
-        while stBuf.count > 1 && stLen > reach {
-            let a = stBuf.removeFirst()
-            stLen -= ((stBuf[0].x - a.x) * (stBuf[0].x - a.x) + (stBuf[0].y - a.y) * (stBuf[0].y - a.y)).squareRoot()
+        stHead = q
+        guard var a = stLast else {
+            stLast = q; stPts = [q]; stN = 1; stOutLast = q; stMoveT = q.t; stPrevT = q.t
+            out.append(q)
+            return
         }
-        out.append(stOut())
-    }
-    private func stOut() -> Sample {
-        var x = 0.0, y = 0.0
-        for s in stBuf { x += s.x; y += s.y }
-        let l = stBuf[stBuf.count - 1], n = Double(stBuf.count)
-        return Sample(x: x / n, y: y / n, p: l.p, t: l.t)
+        let h = Smoother.stStep
+        let k = clampD(speed / 0.5, 1, 3)
+        let reach: Double = pow(o.st, 1.2) * 90 * (1 + o.sts * (k - 1))
+        let target = max(1, reach / h)
+        var d = ((q.x - a.x) * (q.x - a.x) + (q.y - a.y) * (q.y - a.y)).squareRoot()
+        var moved = false
+        while d >= h {
+            let f = h / d
+            a = Sample(x: a.x + (q.x - a.x) * f, y: a.y + (q.y - a.y) * f, p: a.p + (q.p - a.p) * f, t: a.t + (q.t - a.t) * f)
+            stPts.append(a)
+            d -= h
+            stN += (target - stN) * 0.08
+            moved = true
+        }
+        stLast = a
+        if moved {
+            stMoveT = q.t
+        } else if q.t - stMoveT > 40 && stN > 1.001 {
+            // the pencil is resting: let the line glide onto it rather than stopping short
+            stN = max(1, stN * exp(-max(0, q.t - stPrevT) / 120))
+            stOutLast = stOut(stN, t: q.t)
+        }
+        stPrevT = q.t
+        if moved {
+            stN = min(stN, Double(stPts.count))
+            let keep = Int(stN) + 2
+            if stPts.count > keep + 32 { stPts.removeFirst(stPts.count - keep) }
+            stOutLast = stOut(stN, t: q.t)
+        }
+        if var r = stOutLast { r.t = q.t; out.append(r) }
     }
     private mutating func stFlush(_ out: inout [Sample]) {
-        if o.st < 0.01 { return }
-        while stBuf.count > 1 {
-            let a = stBuf.removeFirst()
-            stLen -= ((stBuf[0].x - a.x) * (stBuf[0].x - a.x) + (stBuf[0].y - a.y) * (stBuf[0].y - a.y)).squareRoot()
-            out.append(stOut())
+        guard o.st >= 0.01, let a = stLast, let q = stHead else { return }
+        if (q.x - a.x) * (q.x - a.x) + (q.y - a.y) * (q.y - a.y) > 1e-12 { stPts.append(q); stLast = q }
+        let n0 = min(stN, Double(stPts.count))
+        let steps = max(1, min(16, Int(n0)))
+        for i in 1...steps {
+            let n: Double = i == steps ? 1 : max(1, n0 * (1 - Double(i) / Double(steps)))
+            out.append(stOut(n, t: q.t))
         }
     }
 
     // MARK: streamline
+    /// Lag per stage (two stages ≈ 300 ms total at 100%) and the pressure lag, in ms.
+    private var slTaus: (Double, Double) { (pow(o.sl, 1.5) * 150, o.slp * 260) }
+    private mutating func slStep(_ q: Sample, _ dt: Double) {
+        guard var a = slA, var b = slB else { return }
+        let (tp, tpr) = slTaus
+        let k: Double = tp < 0.5 ? 1 : 1 - exp(-dt / tp)
+        let kr: Double = tpr < 1 ? 1 : 1 - exp(-dt / tpr)
+        a.x += (q.x - a.x) * k; a.y += (q.y - a.y) * k
+        b.x += (a.x - b.x) * k; b.y += (a.y - b.y) * k
+        b.p += (q.p - b.p) * kr
+        b.t = q.t
+        slA = a; slB = b
+    }
     private mutating func slPush(_ q: Sample, _ out: inout [Sample]) {
-        guard var s = sl else { sl = q; out.append(q); return }
-        let dt = max(1, q.t - s.t)
-        let tp = pow(o.sl, 1.5) * 230, tpr = o.slp * 260
-        let kp = tp < 1 ? 1 : 1 - exp(-dt / tp)
-        let kr = tpr < 1 ? 1 : 1 - exp(-dt / tpr)
-        s.x += (q.x - s.x) * kp
-        s.y += (q.y - s.y) * kp
-        s.p += (q.p - s.p) * kr
-        s.t = q.t
-        sl = s
+        guard let b = slB else { slA = q; slB = q; slTarget = q; out.append(q); return }
         slTarget = q
-        out.append(s)
+        slStep(q, max(0.5, q.t - b.t))
+        if let r = slB { out.append(r) }
     }
     private mutating func slFlush(_ out: inout [Sample]) {
-        guard let s = sl, let q = slTarget, o.sl >= 0.01 else { return }
-        let d = ((q.x - s.x) * (q.x - s.x) + (q.y - s.y) * (q.y - s.y)).squareRoot()
-        let n = min(24, Int((d / 3).rounded(.up)))
-        if n < 1 { return }
-        for i in 1...n {
-            let t = Double(i) / Double(n), e = 1 - (1 - t) * (1 - t)
-            out.append(Sample(x: s.x + (q.x - s.x) * e, y: s.y + (q.y - s.y) * e, p: s.p + (q.p - s.p) * t, t: q.t))
+        guard o.sl >= 0.01, let q = slTarget, let a = slA, let b = slB else { return }
+        let d = ((q.x - b.x) * (q.x - b.x) + (q.y - b.y) * (q.y - b.y)).squareRoot() + ((q.x - a.x) * (q.x - a.x) + (q.y - a.y) * (q.y - a.y)).squareRoot()
+        if d < 0.05 { return }
+        let n = max(4, min(40, Int(d / 2) + 1))
+        let dt = slTaus.0 * 7 / Double(n)
+        var t = b.t
+        for _ in 0..<n {
+            t += dt
+            slStep(Sample(x: q.x, y: q.y, p: q.p, t: t), dt)
+            if var r = slB { r.t = q.t; out.append(r) }
         }
+        out.append(q)
     }
 
     // MARK: rope
@@ -143,7 +230,7 @@ struct Smoother {
         }
     }
     private mutating func ropeFlush(_ out: inout [Sample]) {
-        guard o.catchUp, o.rope >= 0.5, let t0 = tip, let q = pen else { return }
+        guard o.rope >= 0.5, let t0 = tip, let q = pen else { return }
         let d = ((q.x - t0.x) * (q.x - t0.x) + (q.y - t0.y) * (q.y - t0.y)).squareRoot()
         let n = min(40, Int((d / 3).rounded(.up)))
         if n < 1 { return }
@@ -154,7 +241,10 @@ struct Smoother {
     }
 
     // MARK: chain
-    mutating func push(_ s: Sample) -> [Sample] {
+    mutating func push(_ s0: Sample) -> [Sample] {
+        var s = s0
+        if s.t < lastT { s.t = lastT }
+        lastT = s.t
         var a: [Sample] = [], b: [Sample] = [], c: [Sample] = [], d: [Sample] = []
         mfPush(s, &a)
         for q in a { stPush(q, &b) }
@@ -164,7 +254,9 @@ struct Smoother {
         return d
     }
 
+    /// End of stroke. Without catch-up nothing is added: the line stays exactly as it was drawn.
     mutating func flush() -> [Sample] {
+        guard o.catchUp else { return [] }
         var m: [Sample] = []
         mfFlush(&m)
         var s: [Sample] = []
@@ -278,44 +370,219 @@ enum PressureCurve {
 
 // MARK: - Hold to snap
 
-enum SnappedShape {
+/// An ellipse in canvas units. `start` is the parameter angle where the outline begins (where the stroke began),
+/// `dir` is +1 or -1 so the outline runs the same way the stroke was drawn.
+struct Ellipse: Equatable {
+    var c: V2
+    var r1: Double
+    var r2: Double
+    var angle: Double
+    var start: Double = 0
+    var dir: Double = 1
+    var circle: Bool = false
+
+    func point(_ t: Double) -> V2 {
+        let ex = cos(t) * r1, ey = sin(t) * r2, ca = cos(angle), sa = sin(angle)
+        return V2(c.x + ex * ca - ey * sa, c.y + ex * sa + ey * ca)
+    }
+    /// The four axis ends: +r1, +r2, -r1, -r2.
+    var handles: [V2] { [point(0), point(.pi / 2), point(.pi), point(.pi * 1.5)] }
+    /// Closed outline with two extra steps of overlap so the round ends meet seamlessly.
+    func outline(steps n: Int) -> [V2] {
+        var pts: [V2] = []
+        pts.reserveCapacity(n + 3)
+        for i in 0...(n + 2) { pts.append(point(start + dir * Double(i) / Double(n) * .pi * 2)) }
+        return pts
+    }
+    /// Parameter angle of a point (as if it were on the outline).
+    func param(of p: V2) -> Double {
+        let ca = cos(angle), sa = sin(angle), dx = p.x - c.x, dy = p.y - c.y
+        let lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca
+        return atan2(ly / max(r2, 1e-9), lx / max(r1, 1e-9))
+    }
+}
+
+enum SnappedShape: Equatable {
     case line(V2, V2)
-    case ellipse([V2], circle: Bool)
+    case ellipse(Ellipse)
+
+    /// Flat [x, y, p, …] points for the stroke, spaced for the given zoom.
+    func points(pressure: Double, zoom: Double) -> [Double] {
+        switch self {
+        case .line(let a, let b):
+            let n = max(2, Int((a.dist(b) * zoom / 6).rounded(.up)))
+            var pts: [Double] = []
+            pts.reserveCapacity((n + 1) * 3)
+            for i in 0...n { let t = Double(i) / Double(n); pts += [a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, pressure] }
+            return pts
+        case .ellipse(let e):
+            let circ = Double.pi * (3 * (e.r1 + e.r2) - ((3 * e.r1 + e.r2) * (e.r1 + 3 * e.r2)).squareRoot())
+            let n = max(48, min(360, Int(circ * zoom / 7)))
+            return e.outline(steps: n).flatMap { [$0.x, $0.y, pressure] }
+        }
+    }
+    var end: V2 {
+        switch self {
+        case .line(_, let b): return b
+        case .ellipse(let e): return e.point(e.start + e.dir * (2 * .pi + 4 * .pi / 96))
+        }
+    }
 }
 
 enum ShapeFit {
-    /// raw: points in canvas units.
+    /// pts: the drawn line in canvas units. A closed loop becomes an ellipse (or a circle when nearly round), anything else a line.
     static func fit(_ raw: [V2]) -> SnappedShape? {
         let n = raw.count
         if n < 4 { return nil }
         var len = 0.0
         for i in 1..<n { len += raw[i].dist(raw[i - 1]) }
         let a = raw[0], b = raw[n - 1], gap = a.dist(b)
-        if len > 0 && gap < len * 0.2 {
-            var cx = 0.0, cy = 0.0
-            for p in raw { cx += p.x; cy += p.y }
-            cx /= Double(n); cy /= Double(n)
-            var sxx = 0.0, syy = 0.0, sxy = 0.0
-            for p in raw { let dx = p.x - cx, dy = p.y - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy }
-            sxx /= Double(n); syy /= Double(n); sxy /= Double(n)
-            let tr = sxx + syy, det = sxx * syy - sxy * sxy
-            let disc = max(0, tr * tr / 4 - det).squareRoot()
-            let l1 = tr / 2 + disc, l2 = max(0, tr / 2 - disc)
-            let ang = atan2(l1 - sxx, sxy == 0 ? 1e-9 : sxy)
-            var r1 = (2 * l1).squareRoot(), r2 = (2 * l2).squareRoot()
-            let circle = r1 > 0 && r2 / r1 > 0.88
-            if circle { r1 = (r1 + r2) / 2; r2 = r1 }
-            let ca = cos(ang), sa = sin(ang)
-            let start = atan2(-(a.x - cx) * sa + (a.y - cy) * ca, (a.x - cx) * ca + (a.y - cy) * sa)
-            var pts: [V2] = []
-            let N = 96
-            for i in 0...(N + 2) {
-                let t = start + Double(i) / Double(N) * Double.pi * 2
-                let ex = cos(t) * r1, ey = sin(t) * r2
-                pts.append(V2(cx + ex * ca - ey * sa, cy + ex * sa + ey * ca))
+        guard len > 0 else { return nil }
+        if gap >= len * 0.2 { return .line(a, b) }
+        let pts = resample(raw, count: 160)
+        guard var e = fitEllipse(pts) ?? momentEllipse(pts) else { return .line(a, b) }
+        if e.r2 / e.r1 > 0.88 { let r = (e.r1 + e.r2) / 2; e.r1 = r; e.r2 = r; e.circle = true }
+        e.start = e.param(of: a)
+        // drawn clockwise or anticlockwise (shoelace sign, relative to the ellipse's own frame)
+        var area = 0.0
+        for i in 0..<(pts.count - 1) { area += (pts[i].x - e.c.x) * (pts[i + 1].y - e.c.y) - (pts[i + 1].x - e.c.x) * (pts[i].y - e.c.y) }
+        e.dir = area >= 0 ? 1 : -1
+        return .ellipse(e)
+    }
+
+    /// Evenly spaced along the path, so slow and fast parts of the stroke count equally.
+    static func resample(_ p: [V2], count: Int) -> [V2] {
+        var len = 0.0
+        for i in 1..<p.count { len += p[i].dist(p[i - 1]) }
+        let step = len / Double(count - 1)
+        guard step > 0 else { return p }
+        var out: [V2] = [p[0]]
+        var prev = p[0], acc = 0.0, i = 1
+        while i < p.count && out.count < count {
+            let d = prev.dist(p[i])
+            if acc + d >= step {
+                let t = (step - acc) / d
+                prev = V2.lerp(prev, p[i], t)
+                out.append(prev)
+                acc = 0
+            } else {
+                acc += d; prev = p[i]; i += 1
             }
-            return .ellipse(pts, circle: circle)
         }
-        return .line(a, b)
+        if out.count < count { out.append(p[p.count - 1]) }
+        return out
+    }
+
+    /// Direct least-squares ellipse fit (Fitzgibbon, in the numerically stable form of Halír and Flusser).
+    static func fitEllipse(_ pts: [V2]) -> Ellipse? {
+        let n = Double(pts.count)
+        var mx = 0.0, my = 0.0
+        for p in pts { mx += p.x; my += p.y }
+        mx /= n; my /= n
+        var sc = 0.0
+        for p in pts { sc += (p.x - mx) * (p.x - mx) + (p.y - my) * (p.y - my) }
+        sc = (sc / n).squareRoot()
+        if sc < 1e-9 { return nil }
+        var S1 = [[Double]](repeating: [0, 0, 0], count: 3), S2 = S1, S3 = S1
+        for p in pts {
+            let x = (p.x - mx) / sc, y = (p.y - my) / sc
+            let d1 = [x * x, x * y, y * y], d2 = [x, y, 1.0]
+            for i in 0..<3 { for j in 0..<3 { S1[i][j] += d1[i] * d1[j]; S2[i][j] += d1[i] * d2[j]; S3[i][j] += d2[i] * d2[j] } }
+        }
+        guard let S3i = inv3(S3) else { return nil }
+        var T = [[Double]](repeating: [0, 0, 0], count: 3)
+        for i in 0..<3 { for j in 0..<3 { var v = 0.0; for k in 0..<3 { v += S3i[i][k] * S2[j][k] }; T[i][j] = -v } }
+        var M = S1
+        for i in 0..<3 { for j in 0..<3 { var v = 0.0; for k in 0..<3 { v += S2[i][k] * T[k][j] }; M[i][j] += v } }
+        let Mp: [[Double]] = [M[2].map { $0 / 2 }, M[1].map { -$0 }, M[0].map { $0 / 2 }]
+        var best: [Double]? = nil, bestCond = 0.0
+        for l in realEigen3(Mp) {
+            guard let v = nullVector(Mp, l) else { continue }
+            let cond = 4 * v[0] * v[2] - v[1] * v[1]
+            if cond > bestCond { bestCond = cond; best = v }
+        }
+        guard let a1 = best else { return nil }
+        var a2 = [0.0, 0.0, 0.0]
+        for i in 0..<3 { for k in 0..<3 { a2[i] += T[i][k] * a1[k] } }
+        let A = a1[0], B = a1[1], C = a1[2], D = a2[0], E = a2[1], F = a2[2]
+        let den = 4 * A * C - B * B
+        if abs(den) < 1e-12 { return nil }
+        let x0 = (B * E - 2 * C * D) / den, y0 = (B * D - 2 * A * E) / den
+        let F0 = F + (D * x0 + E * y0) / 2
+        let t = (A + C) / 2, dd = (((A - C) / 2) * ((A - C) / 2) + (B / 2) * (B / 2)).squareRoot()
+        let m1 = t - dd, m2 = t + dd
+        guard m1 != 0, m2 != 0, -F0 / m1 > 0, -F0 / m2 > 0 else { return nil }
+        let r1 = (-F0 / m1).squareRoot() * sc, r2 = (-F0 / m2).squareRoot() * sc
+        let ang: Double = abs(B) > 1e-12 ? atan2(m1 - A, B / 2) : (A <= C ? 0 : .pi / 2)
+        // reject wild fits to partial loops: the ellipse must be about the size of what was drawn
+        var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
+        for p in pts { minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y) }
+        let span = max(maxX - minX, maxY - minY)
+        guard r1.isFinite, r2.isFinite, r1 < span * 1.2, r2 > span * 0.02 else { return nil }
+        return Ellipse(c: V2(x0 * sc + mx, y0 * sc + my), r1: r1, r2: r2, angle: ang)
+    }
+
+    /// Fallback: ellipse from the second moments of the points.
+    static func momentEllipse(_ pts: [V2]) -> Ellipse? {
+        let n = Double(pts.count)
+        var cx = 0.0, cy = 0.0
+        for p in pts { cx += p.x; cy += p.y }
+        cx /= n; cy /= n
+        var sxx = 0.0, syy = 0.0, sxy = 0.0
+        for p in pts { let dx = p.x - cx, dy = p.y - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy }
+        sxx /= n; syy /= n; sxy /= n
+        let tr = sxx + syy, det = sxx * syy - sxy * sxy
+        let disc = max(0, tr * tr / 4 - det).squareRoot()
+        let l1 = tr / 2 + disc, l2 = max(0, tr / 2 - disc)
+        let r1 = (2 * l1).squareRoot(), r2 = (2 * l2).squareRoot()
+        guard r1 > 0 else { return nil }
+        return Ellipse(c: V2(cx, cy), r1: r1, r2: max(r2, r1 * 0.02), angle: atan2(l1 - sxx, sxy == 0 ? 1e-9 : sxy))
+    }
+
+    private static func inv3(_ m: [[Double]]) -> [[Double]]? {
+        let a = m[0][0], b = m[0][1], c = m[0][2], d = m[1][0], e = m[1][1], f = m[1][2], g = m[2][0], h = m[2][1], i = m[2][2]
+        let A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g
+        let det = a * A + b * B + c * C
+        if abs(det) < 1e-18 { return nil }
+        let D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g), G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d
+        return [[A / det, D / det, G / det], [B / det, E / det, H / det], [C / det, F / det, I / det]]
+    }
+
+    /// Real eigenvalues of a 3×3 matrix (roots of its characteristic cubic).
+    private static func realEigen3(_ M: [[Double]]) -> [Double] {
+        let tr = M[0][0] + M[1][1] + M[2][2]
+        let c1 = (M[0][0] * M[1][1] - M[0][1] * M[1][0]) + (M[0][0] * M[2][2] - M[0][2] * M[2][0]) + (M[1][1] * M[2][2] - M[1][2] * M[2][1])
+        let a = M[0][0], b = M[0][1], c = M[0][2], d = M[1][0], e = M[1][1], f = M[1][2], g = M[2][0], h = M[2][1], i = M[2][2]
+        let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+        let A = -tr, B = c1, C = -det
+        let p = B - A * A / 3
+        let q = 2 * A * A * A / 27 - A * B / 3 + C
+        let disc = (q / 2) * (q / 2) + (p / 3) * (p / 3) * (p / 3)
+        var roots: [Double] = []
+        if disc > 1e-30 {
+            let s = disc.squareRoot()
+            roots = [cbrt(-q / 2 + s) + cbrt(-q / 2 - s)]
+        } else {
+            let r = max(0, -p / 3).squareRoot()
+            if r < 1e-30 { roots = [0] } else {
+                let phi = acos(clampD((-q / 2) / (r * r * r), -1, 1))
+                roots = (0..<3).map { 2 * r * cos((phi + 2 * .pi * Double($0)) / 3) }
+            }
+        }
+        return roots.map { $0 - A / 3 }
+    }
+
+    private static func nullVector(_ M: [[Double]], _ l: Double) -> [Double]? {
+        var R = M
+        for k in 0..<3 { R[k][k] -= l }
+        var best: [Double]? = nil, bn = 0.0
+        for (u, v) in [(0, 1), (0, 2), (1, 2)] {
+            let a = R[u], b = R[v]
+            let cr = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+            let nrm = (cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]).squareRoot()
+            if nrm > bn { bn = nrm; best = cr }
+        }
+        guard let v = best, bn > 1e-30 else { return nil }
+        return v.map { $0 / bn }
     }
 }

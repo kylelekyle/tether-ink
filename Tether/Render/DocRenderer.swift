@@ -6,7 +6,11 @@ struct LayerSnap {
     let visible: Bool
     let opacity: Double
     let hasErase: Bool
-    init(_ l: Layer) { items = l.items; visible = l.visible; opacity = l.opacity; hasErase = l.hasErase }
+    init(_ l: Layer, hiding: String? = nil) {
+        items = hiding.map { h in l.items.filter { $0.id != h } } ?? l.items
+        visible = l.visible; opacity = l.opacity; hasErase = l.hasErase
+    }
+    init(items: [Item], visible: Bool, opacity: Double) { self.items = items; self.visible = visible; self.opacity = opacity; hasErase = items.contains { $0.isErase } }
 }
 
 func rgba(hex: String) -> (CGFloat, CGFloat, CGFloat) {
@@ -101,6 +105,7 @@ enum DocRenderer {
         let pxH: Int
         let scale: CGFloat
         let activeOnly: Bool
+        let layerId: String
     }
     struct ScreenResult {
         let below: CGImage?
@@ -108,6 +113,33 @@ enum DocRenderer {
         let above: CGImage?
         let view: CGAffineTransform
         let activeOnly: Bool
+        let layerId: String
+    }
+    /// New strokes drawn onto the current layer's last bitmap (far cheaper than redrawing the layer).
+    struct AppendJob {
+        let base: CGImage
+        let items: [Item]
+        let docW: Double
+        let docH: Double
+        let view: CGAffineTransform
+        let pxW: Int
+        let pxH: Int
+        let scale: CGFloat
+        let layerId: String
+    }
+
+    static func renderAppend(_ j: AppendJob) -> ScreenResult {
+        guard let ctx = makeContext(j.pxW, j.pxH) else {
+            return ScreenResult(below: nil, active: j.base, above: nil, view: j.view, activeOnly: true, layerId: j.layerId)
+        }
+        ctx.draw(j.base, in: CGRect(x: 0, y: 0, width: j.pxW, height: j.pxH))
+        let vis = CGRect(x: 0, y: 0, width: CGFloat(j.pxW) / j.scale, height: CGFloat(j.pxH) / j.scale).applying(j.view.inverted())
+        ctx.saveGState()
+        applyView(ctx, height: j.pxH, scale: j.scale, view: j.view)
+        ctx.clip(to: CGRect(x: 0, y: 0, width: j.docW, height: j.docH))
+        drawItems(ctx, j.items, visible: vis)
+        ctx.restoreGState()
+        return ScreenResult(below: nil, active: ctx.makeImage(), above: nil, view: j.view, activeOnly: true, layerId: j.layerId)
     }
 
     static func renderScreen(_ j: ScreenJob) -> ScreenResult {
@@ -144,10 +176,10 @@ enum DocRenderer {
         }
         let a = max(0, min(j.active, j.layers.count - 1))
         let active = j.layers.isEmpty ? nil : layerImage(j.layers[a])
-        if j.activeOnly { return ScreenResult(below: nil, active: active, above: nil, view: j.view, activeOnly: true) }
+        if j.activeOnly { return ScreenResult(below: nil, active: active, above: nil, view: j.view, activeOnly: true, layerId: j.layerId) }
         let below = composite(0..<a)
         let above = composite((a + 1)..<max(a + 1, j.layers.count))
-        return ScreenResult(below: below, active: active, above: above, view: j.view, activeOnly: false)
+        return ScreenResult(below: below, active: active, above: above, view: j.view, activeOnly: false, layerId: j.layerId)
     }
 
     // MARK: whole document (export, thumbnails, colour picking)

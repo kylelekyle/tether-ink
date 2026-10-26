@@ -74,7 +74,7 @@ final class AppModel {
         gallery = store.list()
         if demo == nil, let last = UserDefaults.standard.string(forKey: "lastDoc"), let d = store.load(id: last) { open(d) }
         else if demo == nil, let first = gallery.first, let d = store.load(id: first.id) { open(d) }
-        else { let d = AppModel.makeSampler(); open(d); markDirty() }
+        else { let d = AppModel.makeSampler(); open(d); if demo == nil { markDirty() } }
         if let d = demo { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.runDemo(d) } }
     }
 
@@ -182,6 +182,7 @@ final class AppModel {
         if remember { rememberColor(hex) }
     }
     func rememberColor(_ hex: String) {
+        if prefs.colorHistory.first == hex.lowercased() { return }
         var h = prefs.colorHistory.filter { $0 != hex.lowercased() }
         h.insert(hex.lowercased(), at: 0)
         setPref(\.colorHistory, Array(h.prefix(18)))
@@ -222,10 +223,10 @@ final class AppModel {
 
     // MARK: history
 
-    func push(_ e: HistoryEntry) { history.push(e); refreshUndo() }
+    func push(_ e: HistoryEntry) { canvas?.endShapeEdit(); history.push(e); refreshUndo() }
     func refreshUndo() { canUndo = history.canUndo; canRedo = history.canRedo }
-    func undo() { if let e = history.undo() { docChanged(); toast("Undo · \(e.label)") }; refreshUndo() }
-    func redo() { if let e = history.redo() { docChanged(); toast("Redo · \(e.label)") }; refreshUndo() }
+    func undo() { canvas?.endShapeEdit(); if let e = history.undo() { docChanged(); toast("Undo · \(e.label)") }; refreshUndo() }
+    func redo() { canvas?.endShapeEdit(); if let e = history.redo() { docChanged(); toast("Redo · \(e.label)") }; refreshUndo() }
 
     // MARK: documents
 
@@ -248,18 +249,18 @@ final class AppModel {
     func markDirty() {
         guard let d = doc else { return }
         d.updated = nowMs()
-        status = "Edited"
+        if status != "Edited" { status = "Edited" }
         saveWork?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.saveNow() }
         saveWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: w)
     }
 
     func saveNow() {
         saveWork?.cancel(); saveWork = nil
         guard let d = doc else { return }
-        store.save(d, thumbnail: DocRenderer.thumbnail(d))
-        status = "Saved"
+        store.save(d)
+        if status != "Saved" { status = "Saved" }
         prefs.save()
     }
 
@@ -286,7 +287,7 @@ final class AppModel {
         saveNow(); store.waitForWrites()
         guard let d = store.load(id: id) else { return }
         d.id = newID(); d.name += " copy"; d.created = nowMs(); d.updated = nowMs()
-        store.save(d, thumbnail: DocRenderer.thumbnail(d))
+        store.save(d)
         refreshGallery()
     }
 
@@ -304,7 +305,7 @@ final class AppModel {
         let n = String(name.trimmingCharacters(in: .whitespaces).prefix(80))
         guard !n.isEmpty else { return }
         if doc?.id == id { doc?.name = n; docVersion += 1; saveNow() }
-        else if let d = store.load(id: id) { d.name = n; d.updated = nowMs(); store.save(d, thumbnail: DocRenderer.thumbnail(d)) }
+        else if let d = store.load(id: id) { d.name = n; d.updated = nowMs(); store.save(d) }
         refreshGallery()
     }
 
@@ -470,7 +471,9 @@ final class AppModel {
         case "layers": panel = .layers
         case "smoothing": panel = .smoothing
         case "actions": panel = .actions
-        case "colour": panel = .colour
+        case "colour": UserDefaults.standard.set("disc", forKey: "colourTab"); panel = .colour
+        case "colourclassic": UserDefaults.standard.set("classic", forKey: "colourTab"); panel = .colour
+        case "shape": canvas?.demoShape()
         case "editor": editor = EditorTarget(id: "studio", tab: .smoothing)
         case "global": showGlobal = true
         case "gallery": refreshGallery(); showGallery = true

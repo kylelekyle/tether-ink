@@ -70,7 +70,7 @@ final class PadCanvas: UIView {
         for t in touches where ObjectIdentifier(t) == lv.id {
             for c in event?.coalescedTouches(for: t) ?? [t] { feed(lv, c.location(in: self), pressure(c), c.timestamp * 1000) }
             var sm = lv.sm, em = lv.em
-            for pt in event?.predictedTouches(for: t) ?? [] {
+            for pt in (lv.sm.o.light ? event?.predictedTouches(for: t) ?? [] : []) {
                 let p = pt.location(in: self)
                 let pr = lv.pencil ? (model?.pressure(pressure(pt)) ?? 0.5) : 0.5
                 for q in sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: pt.timestamp * 1000)) { em.add(q.x, q.y, q.p) }

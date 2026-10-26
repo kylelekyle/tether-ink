@@ -41,8 +41,8 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.15), value: model.toastText)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .fullScreenCover(isPresented: $model.showGallery) { GalleryView().environment(model) }
-        .fullScreenCover(item: $model.editor) { t in BrushEditorView(target: t).environment(model) }
+        .fullScreenCover(isPresented: $model.showGallery) { GalleryView().environment(model).statusBarHidden(true) }
+        .fullScreenCover(item: $model.editor) { t in BrushEditorView(target: t).environment(model).statusBarHidden(true) }
         .sheet(isPresented: $model.showGlobal) { GlobalSmoothingView().environment(model) }
         .fileImporter(isPresented: $model.importingBackup, allowedContentTypes: [.json]) { result in
             if case .success(let url) = result { model.importBackup(url) }

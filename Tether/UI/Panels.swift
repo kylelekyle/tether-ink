@@ -116,11 +116,14 @@ struct SmoothingPanel: View {
                 if model.prefs.ropeOn {
                     SettingSlider(label: "String length", value: model.bind(\.ropeLength), range: 2...200, step: 1, format: { "\(Int($0)) px" },
                                   hint: "The line only moves when the pencil pulls the string tight. Measured on screen, so it feels the same at every zoom.")
-                    Toggle("Catch up when I lift the pencil", isOn: model.bind(\.catchUp))
                     Toggle("Show the string", isOn: model.bind(\.showRope))
                 } else {
                     Text("Turn the rope on for long, controlled curves and clean straight lines.").font(.footnote).foregroundStyle(.secondary)
                 }
+                SectionLabel("When I lift the pencil")
+                Toggle("Catch up to the pencil", isOn: model.bind(\.catchUp))
+                Text(model.prefs.catchUp ? "The line finishes where the pencil lifted." : "The line stays exactly as drawn: smoothing never adds a tail when you lift.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 SectionLabel(b.name)
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
                     GridRow { Text("Streamline").foregroundStyle(.secondary); Text(pct(b.streamline)).monospacedDigit() }
@@ -315,56 +318,6 @@ struct Checkerboard: View {
 
 // MARK: - colour
 
-struct SystemColorPicker: UIViewControllerRepresentable {
-    let model: AppModel
-    func makeUIViewController(context: Context) -> UIColorPickerViewController {
-        let vc = UIColorPickerViewController()
-        vc.supportsAlpha = false
-        vc.selectedColor = uiColor(hex: model.prefs.color)
-        vc.delegate = context.coordinator
-        return vc
-    }
-    func updateUIViewController(_ vc: UIColorPickerViewController, context: Context) {
-        let want = uiColor(hex: model.prefs.color)
-        if hexString(vc.selectedColor) != model.prefs.color { vc.selectedColor = want }
-    }
-    func makeCoordinator() -> Coordinator { Coordinator(model) }
-    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
-        let model: AppModel
-        init(_ m: AppModel) { model = m }
-        func colorPickerViewController(_ viewController: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
-            model.setColor(hexString(color))
-        }
-        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) { model.panel = nil }
-    }
-}
-
-struct ColourPanel: View {
-    @Environment(AppModel.self) private var model
-    var body: some View {
-        VStack(spacing: 0) {
-            SystemColorPicker(model: model)
-                .frame(height: 540)
-            if !model.prefs.colorHistory.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel("Recent")
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 9), spacing: 6) {
-                        ForEach(model.prefs.colorHistory, id: \.self) { c in
-                            Button { model.setColor(c) } label: {
-                                RoundedRectangle(cornerRadius: 7).fill(Color(uiColor: uiColor(hex: c))).aspectRatio(1, contentMode: .fit)
-                                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(c == model.prefs.color ? Color.accentColor : Color.primary.opacity(0.2), lineWidth: c == model.prefs.color ? 2.5 : 1))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(14)
-            }
-        }
-        .frame(width: 360)
-    }
-}
-
 // MARK: - actions
 
 struct ActionsPanel: View {
@@ -412,7 +365,7 @@ struct ActionsPanel: View {
         var strokes = 0, points = 0
         for L in d?.layers ?? [] { for it in L.items { if case .stroke(let s) = it { strokes += 1; points += s.p.count / 3 } } }
         return VStack(alignment: .leading, spacing: 8) {
-            rowButton("Fit canvas to screen", "Or pinch in quickly") { model.panel = nil; model.canvas?.animateFit() }
+            rowButton("Fit canvas to screen", "Centre the whole canvas") { model.panel = nil; model.canvas?.animateFit() }
             rowButton("Flip view horizontally", "Check proportions with fresh eyes") { model.canvas?.flipView() }
             rowButton("Rename drawing", d?.name ?? "") { newName = d?.name ?? ""; renaming = true }
             SectionLabel("Canvas information")

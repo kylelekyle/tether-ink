@@ -10,6 +10,7 @@ struct Prefs: Codable, Equatable {
     var opacityBrush = 1.0
     var opacityEraser = 1.0
     var colorHistory: [String] = []
+    var palette: [String] = []
     // rope
     var ropeOn = true
     var ropeLength = 40.0
@@ -32,7 +33,7 @@ struct Prefs: Codable, Equatable {
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case brushId, eraserId, brushOverrides, customBrushes, color, opacityBrush, opacityEraser, colorHistory
+        case brushId, eraserId, brushOverrides, customBrushes, color, opacityBrush, opacityEraser, colorHistory, palette
         case ropeOn, ropeLength, catchUp, showRope, gStab, gMotion, gMotionExpr, curve, snap, snapDelay
         case rightHand, fingerDraw, rotate, pencilTap, pencilSqueeze
     }
@@ -50,6 +51,7 @@ struct Prefs: Codable, Equatable {
         opacityBrush = v(.opacityBrush, base.opacityBrush)
         opacityEraser = v(.opacityEraser, base.opacityEraser)
         colorHistory = v(.colorHistory, base.colorHistory)
+        palette = v(.palette, base.palette).filter(isHexColor)
         ropeOn = v(.ropeOn, base.ropeOn)
         ropeLength = v(.ropeLength, base.ropeLength)
         catchUp = v(.catchUp, base.catchUp)
