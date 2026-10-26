@@ -21,8 +21,8 @@ final class EngineTests: XCTestCase {
         XCTAssertGreaterThan(o.count, 8)
     }
 
-    func testSmootherFinishesAtThePencilWithoutRope() {
-        var sm = Smoother(SmoothParams(mf: 0.5, mfx: 0.5, st: 0.5, sts: 0.5, sl: 0.5, slp: 0.3, rope: 0, catchUp: true))
+    func testSmootherFinishesAtThePencilWithCatchUp() {
+        var sm = Smoother(SmoothParams(mf: 0.5, mfx: 0.5, st: 0.5, sts: 0.5, sl: 0.5, slp: 0.3, catchUp: true))
         var last: Sample? = nil
         for i in 0...100 {
             let out = sm.push(Sample(x: Double(i) * 3, y: 50 + sin(Double(i) / 10) * 20, p: 0.5, t: Double(i) * 4))
@@ -34,14 +34,14 @@ final class EngineTests: XCTestCase {
     }
 
     func testWithoutCatchUpLiftingAddsNothing() {
-        var sm = Smoother(SmoothParams(mf: 1, mfx: 0, st: 1, sts: 1, sl: 1, slp: 1, rope: 0, catchUp: false))
+        var sm = Smoother(SmoothParams(mf: 1, mfx: 0, st: 1, sts: 1, sl: 1, slp: 1, catchUp: false))
         for i in 0...100 { _ = sm.push(Sample(x: Double(i) * 3, y: 0, p: 0.5, t: Double(i) * 4)) }
         XCTAssertTrue(sm.flush().isEmpty)
     }
 
     func testFullSmoothingRemovesTremor() {
         // 9 Hz tremor of ±2 pt on a slow horizontal line, 240 Hz samples
-        var sm = Smoother(SmoothParams(mf: 1, mfx: 1, st: 1, sts: 1, sl: 1, slp: 1, rope: 0, catchUp: true))
+        var sm = Smoother(SmoothParams(mf: 1, mfx: 1, st: 1, sts: 1, sl: 1, slp: 1, catchUp: true))
         var out: [Sample] = []
         for i in 0..<900 {
             let t = Double(i) * 1000 / 240
@@ -50,13 +50,6 @@ final class EngineTests: XCTestCase {
         let mid = out.filter { $0.x > 60 && $0.x < 400 }
         XCTAssertFalse(mid.isEmpty)
         XCTAssertLessThan(mid.map { abs($0.y - 100) }.max() ?? 99, 0.25)
-    }
-
-    func testRopeHoldsTheLineBackByTheStringLength() {
-        var sm = Smoother(SmoothParams(rope: 30))
-        var last: Sample? = nil
-        for i in 0...100 { if let l = sm.push(Sample(x: Double(i) * 3, y: 0, p: 0.5, t: Double(i) * 4)).last { last = l } }
-        XCTAssertEqual(last!.x, 270, accuracy: 0.5)
     }
 
     func testCurveEmitterPassesThroughPoints() {

@@ -11,11 +11,9 @@ final class PadCanvas: UIView {
         let id: ObjectIdentifier
         var sm: Smoother
         var em: CurveEmitter
-        var tip: CGPoint
-        var at: CGPoint
         let pencil: Bool
         var preview: [Double]? = nil
-        init(id: ObjectIdentifier, sm: Smoother, at: CGPoint, pencil: Bool) { self.id = id; self.sm = sm; em = CurveEmitter(minDist: 0.3, spacing: 2); tip = at; self.at = at; self.pencil = pencil }
+        init(id: ObjectIdentifier, sm: Smoother, pencil: Bool) { self.id = id; self.sm = sm; em = CurveEmitter(minDist: 0.3, spacing: 2); self.pencil = pencil }
     }
     private var live: Live?
 
@@ -60,7 +58,7 @@ final class PadCanvas: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard live == nil, let t = touches.first, let m = model else { return }
         let p = t.location(in: self)
-        let lv = Live(id: ObjectIdentifier(t), sm: Smoother(m.smoothing(for: brush)), at: p, pencil: t.type == .pencil)
+        let lv = Live(id: ObjectIdentifier(t), sm: Smoother(m.smoothing(for: brush)), pencil: t.type == .pencil)
         live = lv
         feed(lv, p, pressure(t), t.timestamp * 1000)
         setNeedsDisplay()
@@ -93,13 +91,9 @@ final class PadCanvas: UIView {
     }
 
     private func feed(_ lv: Live, _ p: CGPoint, _ raw: Double, _ t: Double) {
-        lv.at = p
         let pr = lv.pencil ? (model?.pressure(raw) ?? raw) : raw
         if lv.pencil { onPressure?(raw, pr) }
-        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) {
-            lv.em.add(q.x, q.y, q.p)
-            lv.tip = CGPoint(x: q.x, y: q.y)
-        }
+        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) { lv.em.add(q.x, q.y, q.p) }
         lv.preview = nil
     }
 
@@ -117,14 +111,6 @@ final class PadCanvas: UIView {
             var s = brush.shape; s.sim = !lv.pencil
             ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(lv.preview ?? lv.em.live(), s, last: false)))
             ctx.fillPath(using: .winding)
-            if let m = model, m.prefs.ropeOn, m.prefs.showRope {
-                UIColor.tintColor.setStroke()
-                ctx.setLineWidth(1.5)
-                ctx.move(to: lv.tip); ctx.addLine(to: lv.at); ctx.strokePath()
-                ctx.strokeEllipse(in: CGRect(x: lv.at.x - 5, y: lv.at.y - 5, width: 10, height: 10))
-                UIColor.tintColor.setFill()
-                ctx.fillEllipse(in: CGRect(x: lv.tip.x - 2.5, y: lv.tip.y - 2.5, width: 5, height: 5))
-            }
         }
     }
 }
@@ -245,7 +231,7 @@ struct BrushEditorView: View {
                 SectionLabel("Motion filtering")
                 SettingSlider(label: "Amount", value: bind("motion"), hint: "Removes the peaks of hand tremor instead of averaging them, so it works at any speed.")
                 SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "Adds back some of the natural flourish that filtering removes.")
-                Text("Global smoothing (\(pct(model.prefs.gStab)) stabilisation, \(pct(model.prefs.gMotion)) motion filtering) and the rope (\(model.prefs.ropeOn ? "\(Int(model.prefs.ropeLength)) px" : "off")) add on top of these.")
+                Text("Global smoothing (\(pct(model.prefs.gStab)) stabilisation, \(pct(model.prefs.gMotion)) motion filtering) adds on top of these.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Pressure and smoothing for all brushes") { model.showGlobal = true }.buttonStyle(.bordered)
             case .taper:

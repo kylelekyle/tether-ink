@@ -59,6 +59,7 @@ final class AppModel {
     var gallery: [DocMeta] = []
     var librarySet: String? = nil
     var sizeBubble: String? = nil     // "size" | "opacity" while a side bar slider is dragged
+    var sizeEntry = false             // the type-a-size box beside the side bar
 
     @ObservationIgnored let history = History()
     @ObservationIgnored let store = Store()
@@ -164,7 +165,6 @@ final class AppModel {
         s.sts = b.stabSpeed
         s.sl = b.streamline
         s.slp = b.slPressure
-        s.rope = prefs.ropeOn ? prefs.ropeLength : 0
         s.catchUp = prefs.catchUp
         return s
     }
@@ -481,6 +481,7 @@ final class AppModel {
         case "global": showGlobal = true
         case "gallery": refreshGallery(); showGallery = true
         case "draw": canvas?.demoStrokes()
+        case "size": sizeEntry = true
         default: break
         }
     }

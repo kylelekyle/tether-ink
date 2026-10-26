@@ -40,10 +40,6 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private let revealBelow = CALayer()
     private let revealMask = CALayer()
     private let overlay = CALayer()
-    private let ropeLine = CAShapeLayer()
-    private let tipDot = CAShapeLayer()
-    private let penRing = CAShapeLayer()
-    private let reach = CAShapeLayer()
     private let cursorRing = CAShapeLayer()
     private let cursorRingInner = CAShapeLayer()
     private let loupeTop = CAShapeLayer()
@@ -200,16 +196,13 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         liveLayer.fillRule = .nonZero
         for l in [belowLayer, activeLayer, aboveLayer] { l.contentsGravity = .resize; l.magnificationFilter = .linear }
         layer.addSublayer(overlay)
-        for l in [ropeLine, tipDot, penRing, reach, cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] {
+        for l in [cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] {
             l.fillColor = UIColor.clear.cgColor
             overlay.addSublayer(l)
         }
         editGuide.lineWidth = 1
         editGuide.lineDashPattern = [4, 4]
         editHandles.lineWidth = 1.5
-        ropeLine.lineWidth = 1.5
-        penRing.lineWidth = 1.5
-        reach.lineWidth = 1
         cursorRing.lineWidth = 1
         cursorRingInner.lineWidth = 1
         loupeTop.lineWidth = 16
@@ -220,7 +213,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         super.didMoveToWindow()
         let s = window?.screen.scale ?? UIScreen.main.scale
         for l in [pageLayer, contentLayer, belowLayer, activeLayer, aboveLayer, liveContainer, liveLayer, overlay, revealLayer, revealPaper, revealBelow, revealMask, liveClip,
-                  ropeLine, tipDot, penRing, reach, cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] { l.contentsScale = s }
+                  cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] { l.contentsScale = s }
         becomeFirstResponder()
     }
 
@@ -665,7 +658,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     }
     private func trySnap(_ st: Stroke) {
         guard stroke === st, st.snapped == nil else { return }
-        // fit the line as drawn (after smoothing and the rope), so the shape lands where the line is
+        // fit the line as drawn (after smoothing), so the shape lands where the line is
         let live = st.emitter.live()
         var drawn: [V2] = []
         drawn.reserveCapacity(live.count / 3)
@@ -1097,7 +1090,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         let accent = UIColor.tintColor.cgColor
-        for l in [ropeLine, tipDot, penRing, reach, cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] { l.path = nil }
+        for l in [cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] { l.path = nil }
         if let se = shapeEdit, se.active {
             let hs = handlePoints(se.shape).map { toScreen($0) }
             let hp = UIBezierPath()
@@ -1121,25 +1114,11 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             return
         }
         if let st = stroke {
-            let tp = toScreen(st.tip), pp = toScreen(st.pen)
+            let tp = toScreen(st.tip)
             if st.erase {
                 let rr = max(3, CGFloat(st.brush.size) * zoom / 2)
                 cursorRing.path = UIBezierPath(arcCenter: tp, radius: rr, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
                 cursorRing.strokeColor = UIColor(white: 0.5, alpha: 0.9).cgColor
-            }
-            if model.prefs.ropeOn && model.prefs.showRope && st.snapped == nil {
-                let L = CGFloat(model.prefs.ropeLength)
-                let taut = hypot(pp.x - tp.x, pp.y - tp.y) >= L - 0.75
-                let line = UIBezierPath(); line.move(to: tp); line.addLine(to: pp)
-                ropeLine.path = line.cgPath
-                ropeLine.strokeColor = UIColor.tintColor.withAlphaComponent(taut ? 0.95 : 0.55).cgColor
-                ropeLine.lineDashPattern = taut ? nil : [3, 4]
-                tipDot.path = UIBezierPath(arcCenter: tp, radius: 2.5, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
-                tipDot.fillColor = accent
-                penRing.path = UIBezierPath(arcCenter: pp, radius: 5, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
-                penRing.strokeColor = accent
-                reach.path = UIBezierPath(arcCenter: pp, radius: L, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
-                reach.strokeColor = UIColor.tintColor.withAlphaComponent(0.16).cgColor
             }
             return
         }

@@ -75,11 +75,10 @@ struct TopBar: View {
             Button { toggle(.smoothing) } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "scribble.variable").font(.system(size: 18, weight: .medium))
-                    Text(model.prefs.ropeOn ? "Rope \(Int(model.prefs.ropeLength))" : "Smoothing").font(.footnote.weight(.medium)).monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text("Smoothing").font(.footnote.weight(.medium)).foregroundStyle(.secondary)
                 }
             }
-            .buttonStyle(BarButton(on: model.prefs.ropeOn))
+            .buttonStyle(BarButton(on: model.panel == .smoothing))
             .accessibilityLabel("Smoothing")
             .popover(isPresented: binding(.smoothing), arrowEdge: .top) { SmoothingPanel().environment(model).presentationCompactAdaptation(.popover) }
 
@@ -157,9 +156,15 @@ struct SideBar: View {
             if model.prefs.rightHand, let b = bubble { SizeBubble(kind: b.kind, fine: b.fine) }
             VStack(spacing: 10) {
                 VSlider(value: sizeToV(model.currentSize), onChange: { model.currentSize = vToSize($0) },
-                        onDrag: { on, fine in bubble = on ? ("size", fine) : nil })
+                        onDrag: { on, fine in bubble = on ? ("size", fine) : nil },
+                        onTap: { model.sizeEntry = true })
                     .frame(height: 190)
                     .accessibilityLabel("Brush size")
+                    .accessibilityAction(named: "Type a size") { model.sizeEntry = true }
+                    .popover(isPresented: Binding(get: { model.sizeEntry }, set: { if !$0 { model.sizeEntry = false } }),
+                             arrowEdge: model.prefs.rightHand ? .leading : .trailing) {
+                        SizeEntry().environment(model).presentationCompactAdaptation(.popover)
+                    }
                 Button { model.pickOnce.toggle(); if model.pickOnce { model.toast("Touch the canvas to pick a colour") } } label: {
                     Image(systemName: "eyedropper").font(.system(size: 14, weight: .semibold))
                         .frame(width: 30, height: 30)
@@ -206,8 +211,7 @@ struct SizeBubble: View {
             VStack(alignment: .leading, spacing: 2) {
                 if kind == "size" {
                     Text(fmtSize(model.currentSize)).font(.title3.weight(.semibold)).monospacedDigit()
-                    let s = model.currentSize * Double(model.canvas?.zoom ?? 1)
-                    Text((fine ? "Fine control · " : "") + (s < 10 ? String(format: "%.1f", s) : "\(Int(s))") + " px on screen").font(.caption).foregroundStyle(.secondary)
+                    Text(fine ? "Fine control · Size" : "Size").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text(pct(model.currentOpacity)).font(.title3.weight(.semibold)).monospacedDigit()
                     Text(fine ? "Fine control · Opacity" : "Opacity").font(.caption).foregroundStyle(.secondary)

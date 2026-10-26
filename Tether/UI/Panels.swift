@@ -107,38 +107,26 @@ struct SmoothingPanel: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         let b = model.currentBrush
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Smoothing").font(.headline)
-                SectionLabel("Rope")
-                Picker("Rope", selection: model.bind(\.ropeOn)) { Text("Off").tag(false); Text("On").tag(true) }
-                    .pickerStyle(.segmented)
-                if model.prefs.ropeOn {
-                    SettingSlider(label: "String length", value: model.bind(\.ropeLength), range: 2...200, step: 1, format: { "\(Int($0)) px" },
-                                  hint: "The line only moves when the pencil pulls the string tight. Measured on screen, so it feels the same at every zoom.")
-                    Toggle("Show the string", isOn: model.bind(\.showRope))
-                } else {
-                    Text("Turn the rope on for long, controlled curves and clean straight lines.").font(.footnote).foregroundStyle(.secondary)
-                }
-                SectionLabel("When I lift the pencil")
-                Toggle("Catch up to the pencil", isOn: model.bind(\.catchUp))
-                Text(model.prefs.catchUp ? "The line finishes where the pencil lifted." : "The line stays exactly as drawn: smoothing never adds a tail when you lift.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                SectionLabel(b.name)
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                    GridRow { Text("Streamline").foregroundStyle(.secondary); Text(pct(b.streamline)).monospacedDigit() }
-                    GridRow { Text("Stabilisation").foregroundStyle(.secondary); Text(pct(b.stab) + (model.prefs.gStab > 0 ? " + \(pct(model.prefs.gStab)) global" : "")).monospacedDigit() }
-                    GridRow { Text("Motion filtering").foregroundStyle(.secondary); Text(pct(b.motion) + (model.prefs.gMotion > 0 ? " + \(pct(model.prefs.gMotion)) global" : "")).monospacedDigit() }
-                }
-                .font(.subheadline)
-                rowButton("Edit \(b.name) smoothing", "Streamline, stabilisation and motion filtering for this brush") {
-                    model.panel = nil; model.editor = EditorTarget(id: model.currentBrushId, tab: .smoothing)
-                }
-                rowButton("Pressure and smoothing", "Pressure curve and smoothing for every brush") { model.panel = nil; model.showGlobal = true }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Smoothing").font(.headline)
+            SectionLabel("When I lift the pencil")
+            Toggle("Catch up to the pencil", isOn: model.bind(\.catchUp))
+            Text(model.prefs.catchUp ? "The line finishes where the pencil lifted." : "The line stays exactly as drawn: smoothing never adds a tail when you lift.")
+                .font(.footnote).foregroundStyle(.secondary)
+            SectionLabel(b.name)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                GridRow { Text("Streamline").foregroundStyle(.secondary); Text(pct(b.streamline)).monospacedDigit() }
+                GridRow { Text("Stabilisation").foregroundStyle(.secondary); Text(pct(b.stab) + (model.prefs.gStab > 0 ? " + \(pct(model.prefs.gStab)) global" : "")).monospacedDigit() }
+                GridRow { Text("Motion filtering").foregroundStyle(.secondary); Text(pct(b.motion) + (model.prefs.gMotion > 0 ? " + \(pct(model.prefs.gMotion)) global" : "")).monospacedDigit() }
             }
-            .padding(14)
+            .font(.subheadline)
+            rowButton("Edit \(b.name) smoothing", "Streamline, stabilisation and motion filtering for this brush") {
+                model.panel = nil; model.editor = EditorTarget(id: model.currentBrushId, tab: .smoothing)
+            }
+            rowButton("Pressure and smoothing", "Pressure curve and smoothing for every brush") { model.panel = nil; model.showGlobal = true }
         }
-        .frame(width: 350, height: 520)
+        .padding(14)
+        .frame(width: 350)
     }
 }
 

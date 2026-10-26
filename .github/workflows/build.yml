@@ -83,7 +83,7 @@ jobs:
           xcrun simctl bootstatus "$SIM" -b
           xcrun simctl install "$SIM" build-sim/Build/Products/Debug-iphonesimulator/TetherInk.app
           mkdir -p shots
-          for d in draw shape library editor global layers smoothing actions colour colourclassic gallery; do
+          for d in draw size shape library editor global layers smoothing actions colour colourclassic gallery; do
             xcrun simctl launch --terminate-running-process "$SIM" ink.tether.app -demo $d
             sleep 7
             xcrun simctl io "$SIM" screenshot "shots/$d.png"
@@ -106,7 +106,7 @@ jobs:
               "bundleIdentifier": "ink.tether.app",
               "developerName": repo.split("/")[0],
               "subtitle": "Vector drawing with real stabilisers",
-              "localizedDescription": "A vector drawing app for iPad with a rope stabiliser, streamline, stabilisation and motion filtering, pressure-sensitive vector brushes, layers and SVG export.",
+              "localizedDescription": "A vector drawing app for iPad with streamline, stabilisation and motion filtering, pressure-sensitive vector brushes, layers and SVG export.",
               "iconURL": f"https://raw.githubusercontent.com/{repo}/main/icon.png",
               "tintColor": "#2a63f5",
               "versions": [{

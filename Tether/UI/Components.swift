@@ -40,43 +40,99 @@ struct SectionLabel: View {
 }
 
 /// Procreate-style vertical slider for the side bar: drag up and down; slide sideways for finer control.
+/// A tap (no drag) calls onTap instead of changing the value.
 struct VSlider: View {
     let value: Double
     let onChange: (Double) -> Void
     var onDrag: (Bool, Bool) -> Void = { _, _ in }
+    var onTap: (() -> Void)? = nil
 
     @State private var dragValue: Double? = nil
     @State private var lastY: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
+            let w = geo.size.width
             let h = geo.size.height
             let v = dragValue ?? value
             ZStack(alignment: .bottom) {
                 RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.1))
                 RoundedRectangle(cornerRadius: 9).fill(Color.accentColor.opacity(0.28)).frame(height: max(0, h * v))
-                Capsule().fill(Color.primary).frame(width: 36, height: 14)
+                Capsule().fill(Color.primary).frame(width: w + 6, height: 14)
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
                     .offset(y: -(h * v) + 7)
             }
+            // GeometryReader pins its content to the top-left; the handle is wider than the track,
+            // so give the stack the track's exact size to keep the handle centred on it.
+            .frame(width: w, height: h)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { g in
-                        if dragValue == nil { dragValue = value; lastY = g.location.y }
+                        if dragValue == nil {
+                            // still a tap until the finger or pencil really moves
+                            if onTap != nil && hypot(g.translation.width, g.translation.height) < 5 { return }
+                            dragValue = value; lastY = g.location.y
+                        }
+                        let cur = dragValue ?? value
                         let dx = abs(g.location.x - g.startLocation.x)
                         let precision = 1 / (1 + max(0, dx - 40) / 45)
                         let dy = g.location.y - lastY
                         lastY = g.location.y
-                        let nv = min(1, max(0, (dragValue ?? value) - Double(dy / max(h, 1)) * Double(precision)))
+                        let nv = min(1, max(0, cur - Double(dy / max(h, 1)) * Double(precision)))
                         dragValue = nv
-                        onChange(nv)
+                        if nv != cur { onChange(nv) }
                         onDrag(true, precision < 0.98)
                     }
-                    .onEnded { _ in dragValue = nil; onDrag(false, false) }
+                    .onEnded { _ in
+                        if dragValue == nil { onTap?(); return }
+                        dragValue = nil
+                        onDrag(false, false)
+                    }
             )
         }
         .frame(width: 30)
+    }
+}
+
+/// Type an exact brush size. Opens from a tap on the side bar's size slider.
+struct SizeEntry: View {
+    @Environment(AppModel.self) private var model
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.tool == .eraser ? "Eraser size" : "Brush size").font(.headline)
+            HStack(spacing: 8) {
+                TextField(sizeText(model.currentSize), text: $text)
+                    .keyboardType(.decimalPad)
+                    .focused($focused)
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                    .onSubmit { apply(); model.sizeEntry = false }
+                Text("px").foregroundStyle(.secondary)
+                Button("Set") { apply(); model.sizeEntry = false }
+                    .buttonStyle(.borderedProminent)
+            }
+            Text("\(sizeText(sizeMin)) to \(sizeText(sizeMax)) px").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 260)
+        .onAppear { DispatchQueue.main.async { focused = true } }
+        .onDisappear(perform: apply)   // tapping outside keeps what was typed
+    }
+
+    private func apply() {
+        let t = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        text = ""
+        guard let s = Double(t), s.isFinite, s > 0 else { return }
+        let size = min(max(s, sizeMin), sizeMax)
+        if abs(size - model.currentSize) > 1e-9 { model.currentSize = size }
+    }
+    private func sizeText(_ s: Double) -> String {
+        s < 10 ? String(format: "%.1f", s) : "\(Int(s.rounded()))"
     }
 }
 

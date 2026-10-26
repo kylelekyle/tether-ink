@@ -2,7 +2,6 @@
 
 A free vector drawing app for iPad, laid out like the drawing apps you already know, with proper stroke stabilisation:
 
-- **Rope stabiliser** (pulled string): the line only moves when the pencil pulls the string tight.
 - **Streamline** (amount and pressure), **stabilisation** (amount and speed), **motion filtering** (amount and expression), per brush, plus global smoothing for every brush.
 - **Pressure curve** you can shape by hand, and **hold-to-snap** straight lines, ellipses and circles.
 - **Vector strokes** that stay sharp at any zoom, layers, a stroke eraser and a vector eraser, and SVG/PNG export.

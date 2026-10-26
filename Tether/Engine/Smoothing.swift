@@ -16,11 +16,10 @@ struct SmoothParams {
     var sts: Double = 0.5    // stabilisation speed influence (more smoothing when drawing fast)
     var sl: Double = 0       // streamline amount
     var slp: Double = 0      // streamline pressure
-    var rope: Double = 0     // rope length in screen points, 0 = off
     var catchUp: Bool = false  // on lift, run every stage on to the pencil
 
     /// Light enough that predicted touches help rather than make the line's head flicker.
-    var light: Bool { mf < 0.05 && st < 0.05 && sl < 0.05 && rope < 0.5 }
+    var light: Bool { mf < 0.05 && st < 0.05 && sl < 0.05 }
     /// Something lags behind the pencil, so the line should keep gliding while the pencil rests.
     var lags: Bool { mf >= 0.01 || st >= 0.01 || sl >= 0.01 || slp >= 0.01 }
 }
@@ -30,7 +29,6 @@ struct SmoothParams {
 /// 2. Stabilisation    – triangle-weighted average over a stretch of path (arc length), wider when drawing fast.
 /// 3. Streamline       – the line eases toward the pencil through two cascaded lags (critically damped, no overshoot);
 ///                       a separate lag for pressure.
-/// 4. Rope             – the line only moves when the pencil pulls a string of fixed length taut.
 /// With catch-up on, every stage runs on smoothly to the pencil when it lifts; otherwise the line stays as drawn.
 /// A value type, so a copy can be pushed ahead with predicted touches without disturbing the real stroke.
 struct Smoother {
@@ -56,10 +54,6 @@ struct Smoother {
     private var slA: Sample? = nil
     private var slB: Sample? = nil
     private var slTarget: Sample? = nil
-    // rope
-    private(set) var tip: Sample? = nil
-    private(set) var pen: Sample? = nil
-    private(set) var last: Sample? = nil
     private var lastT = -Double.greatestFiniteMagnitude
 
     init(_ o: SmoothParams) {
@@ -215,43 +209,16 @@ struct Smoother {
         out.append(q)
     }
 
-    // MARK: rope
-    private mutating func ropePush(_ q: Sample, _ out: inout [Sample]) {
-        guard let tp = tip else { tip = q; out.append(q); return }
-        pen = q
-        let L = o.rope
-        if L < 0.5 { tip = q; out.append(q); return }
-        let dx = q.x - tp.x, dy = q.y - tp.y, d = (dx * dx + dy * dy).squareRoot()
-        if d > L {
-            let k = (d - L) / d
-            let nt = Sample(x: tp.x + dx * k, y: tp.y + dy * k, p: q.p, t: q.t)
-            tip = nt
-            out.append(nt)
-        }
-    }
-    private mutating func ropeFlush(_ out: inout [Sample]) {
-        guard o.rope >= 0.5, let t0 = tip, let q = pen else { return }
-        let d = ((q.x - t0.x) * (q.x - t0.x) + (q.y - t0.y) * (q.y - t0.y)).squareRoot()
-        let n = min(40, Int((d / 3).rounded(.up)))
-        if n < 1 { return }
-        for i in 1...n {
-            let t = Double(i) / Double(n)
-            out.append(Sample(x: t0.x + (q.x - t0.x) * t, y: t0.y + (q.y - t0.y) * t, p: t0.p * (1 - t * 0.5), t: q.t))
-        }
-    }
-
     // MARK: chain
     mutating func push(_ s0: Sample) -> [Sample] {
         var s = s0
         if s.t < lastT { s.t = lastT }
         lastT = s.t
-        var a: [Sample] = [], b: [Sample] = [], c: [Sample] = [], d: [Sample] = []
+        var a: [Sample] = [], b: [Sample] = [], c: [Sample] = []
         mfPush(s, &a)
         for q in a { stPush(q, &b) }
         for q in b { slPush(q, &c) }
-        for q in c { ropePush(q, &d) }
-        if let l = d.last { last = l }
-        return d
+        return c
     }
 
     /// End of stroke. Without catch-up nothing is added: the line stays exactly as it was drawn.
@@ -265,15 +232,8 @@ struct Smoother {
         var l: [Sample] = []
         for q in s { slPush(q, &l) }
         slFlush(&l)
-        var r: [Sample] = []
-        for q in l { ropePush(q, &r) }
-        ropeFlush(&r)
-        if let x = r.last { last = x }
-        return r
+        return l
     }
-
-    /// Where the drawn line currently ends.
-    var head: Sample? { tip ?? last }
 }
 
 /// Centripetal Catmull–Rom through the smoothed points so fast strokes stay curved rather than faceted.
