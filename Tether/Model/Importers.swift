@@ -282,11 +282,12 @@ enum BrushImport {
         loops = Array(loops.prefix(60))
         if loops.count == 1 {
             // a single round blob is just a dot
+            // (pixel edges are stairs, so judge by how much of its box it fills: a disc fills π/4)
             let l = loops[0]
-            let a = abs(PixelTrace.area(l))
-            var per = 0.0
-            for i in 0..<l.count { per += l[i].dist(l[(i + 1) % l.count]) }
-            if per > 0 && 4 * Double.pi * a / (per * per) > 0.8 { return nil }
+            let xs = l.map { $0.x }, ys = l.map { $0.y }
+            let w = (xs.max() ?? 0) - (xs.min() ?? 0), h = (ys.max() ?? 0) - (ys.min() ?? 0)
+            let fill = w > 0 && h > 0 ? abs(PixelTrace.area(l)) / (Double.pi / 4 * w * h) : 0
+            if w / max(h, 1e-9) > 0.85 && w / max(h, 1e-9) < 1.18 && fill > 0.92 && fill < 1.08 { return nil }
         }
         // outlines wind one way and holes the other, so they fill right with the non-zero rule
         func inside(_ p: V2, _ poly: [V2]) -> Bool {

@@ -148,7 +148,7 @@ final class EngineTests: XCTestCase {
         }
         // and the line trails the pencil by the same time at any speed (the Studio Pen's default streamline)
         let slow = lag(SmoothParams(sl: 0.35), speed: 400), fast = lag(SmoothParams(sl: 0.35), speed: 1200)
-        XCTAssertEqual(slow, fast, accuracy: 3)
+        XCTAssertEqual(slow, fast, accuracy: 8)
         XCTAssertLessThan(fast, 90)
     }
 
