@@ -399,9 +399,10 @@ enum BrushImport {
 // MARK: - .procreate artwork, traced to vector
 
 enum ProcreateImport {
-    /// Reads the document and traces each layer into vector fills: one fill per colour the layer uses,
-    /// so linework and flat colour come out as clean shapes. Soft shading comes out in flat steps.
-    static func document(_ data: Data, fileName: String, progress: (Double) -> Void = { _ in }) -> Doc? {
+    /// Reads the document. As pixels (the default) each layer comes in exactly as painted, as a pixel layer.
+    /// Traced, each layer becomes vector fills: one per colour the layer uses, so linework and flat colour come out
+    /// as clean shapes and soft shading in flat steps.
+    static func document(_ data: Data, fileName: String, traced: Bool = false, progress: (Double) -> Void = { _ in }) -> Doc? {
         guard let zip = ZipReader(data), let arc = zip.read("Document.archive"),
               let pd = KeyedArchive.root(arc, classes: ["SilicaDocument": PDoc.self, "SilicaLayer": PLayer.self,
                                                         "ValkyrieColorProfile": PIgnore.self, "ValkyrieDocumentAnimation": PIgnore.self,
@@ -420,17 +421,44 @@ enum ProcreateImport {
         var layers: [Layer] = []
         for (li, pl) in pd.layers.reversed().enumerated() {       // Procreate lists the top layer first
             progress(Double(li) / Double(max(1, pd.layers.count)))
-            let L = Layer(name: pl.name)
+            let L = Layer(name: pl.name, pixel: !traced)
             L.visible = !pl.hidden
             L.opacity = clampD(pl.opacity, 0, 1)
             L.locked = pl.locked
-            if let rgba = pixels(zip, uuid: pl.uuid, W: W, H: H, T: T) { L.items = trace(rgba, W: W, H: H) }
+            if let rgba = pixels(zip, uuid: pl.uuid, W: W, H: H, T: T) {
+                if traced { L.items = trace(rgba, W: W, H: H) } else { L.tiles = tiles(rgba, W: W, H: H) }
+            }
             layers.append(L)
         }
         doc.layers = layers
         doc.active = layers.last?.id ?? ""
         progress(1)
         return doc
+    }
+
+    /// A whole layer's pixels cut into our tiles, leaving out the empty ones.
+    static func tiles(_ rgba: [UInt8], W: Int, H: Int) -> [Int: CGImage] {
+        let T = Tiles.size
+        var out: [Int: CGImage] = [:]
+        for r in 0..<((H + T - 1) / T) {
+            for c in 0..<((W + T - 1) / T) {
+                let x0 = c * T, y0 = r * T, tw = min(T, W - x0), th = min(T, H - y0)
+                var px = [UInt8](repeating: 0, count: T * T * 4)
+                var any = false
+                rgba.withUnsafeBufferPointer { src in
+                    for y in 0..<th {
+                        let s = ((y0 + y) * W + x0) * 4, d = y * T * 4
+                        for k in 0..<(tw * 4) {
+                            let v = src[s + k]
+                            px[d + k] = v
+                            if v != 0 { any = true }
+                        }
+                    }
+                }
+                if any, let img = PixelPaint.rgbaImage(px, T) { out[Tiles.key(c, r)] = img }
+            }
+        }
+        return out
     }
 
     /// The layer's pixels, premultiplied RGBA, top row first (Procreate stores them bottom-up).

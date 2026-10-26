@@ -88,6 +88,15 @@ struct RootView: View {
         .fileImporter(isPresented: $model.importingBackup, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { model.importFile(url) }
         }
+        .confirmationDialog("Import \(model.procreateChoice?.name ?? "artwork")",
+                            isPresented: Binding(get: { model.procreateChoice != nil }, set: { if !$0 { model.procreateChoice = nil } }),
+                            titleVisibility: .visible) {
+            Button("Pixel layers (exactly as painted)") { model.importProcreate(traced: false) }
+            Button("Trace to vector shapes") { model.importProcreate(traced: true) }
+            Button("Cancel", role: .cancel) { model.procreateChoice = nil }
+        } message: {
+            Text("Pixel layers keep every brush mark. Tracing turns each layer into flat colour shapes that stay sharp at any zoom.")
+        }
         .photosPicker(isPresented: $model.importingPhoto, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item = item else { return }

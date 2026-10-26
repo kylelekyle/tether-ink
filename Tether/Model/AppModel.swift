@@ -169,24 +169,34 @@ final class AppModel {
         if ok { url.stopAccessingSecurityScopedResource() }
         guard let data = data else { toast("Couldn't read that file"); return }
         let name = url.lastPathComponent
-        importing = ext == "procreate" ? "Tracing \(name)…" : "Importing \(name)…"
+        // artwork: ask whether to keep the pixels or trace them into vector shapes
+        if ext == "procreate" { procreateChoice = (data, name); return }
+        importing = "Importing \(name)…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            if ext == "procreate" {
-                let doc = ProcreateImport.document(data, fileName: name)
-                DispatchQueue.main.async { self?.finishImport(doc) }
-            } else {
+            do {
                 let r = ext == "abr" ? BrushImport.abr(data, fileName: name) : BrushImport.procreate(data, fileName: name)
                 if let r = r { for (b, files) in r.pixel { PixelBrushStore.save(b, files: files) } }
                 DispatchQueue.main.async { self?.finishImport(r) }
             }
         }
     }
-    private func finishImport(_ doc: Doc?) {
+    /// A .procreate file waiting for its answer: pixel layers, or traced to vector.
+    var procreateChoice: (data: Data, name: String)? = nil
+    func importProcreate(traced: Bool) {
+        guard let (data, name) = procreateChoice else { return }
+        procreateChoice = nil
+        importing = traced ? "Tracing \(name)…" : "Importing \(name)…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let doc = ProcreateImport.document(data, fileName: name, traced: traced)
+            DispatchQueue.main.async { self?.finishImport(doc, traced: traced) }
+        }
+    }
+    private func finishImport(_ doc: Doc?, traced: Bool) {
         importing = nil
         guard let d = doc else { toast("That .procreate file couldn't be read"); return }
         saveNow()
         open(d); saveNow(); refreshGallery(); showGallery = false
-        toast("Imported \(d.name) · \(d.layers.count) layers traced to vector")
+        toast("Imported \(d.name) · \(d.layers.count) layers" + (traced ? " traced to vector" : " as pixel layers"))
     }
     private func finishImport(_ r: BrushImport.Result?) {
         importing = nil

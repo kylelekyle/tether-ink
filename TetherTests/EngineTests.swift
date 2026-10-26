@@ -620,6 +620,17 @@ final class EngineTests: XCTestCase {
         XCTAssertNil(b.shape.k, "pixel brushes never draw vector dabs")
     }
 
+    func testProcreateLayersComeInAsPixelTiles() {
+        let W = 300, H = 300
+        var px = [UInt8](repeating: 0, count: W * H * 4)
+        for (x, y) in [(280, 10), (5, 290)] { for c in 0..<4 { px[(y * W + x) * 4 + c] = c == 0 ? 0 : 255 } }
+        let tiles = ProcreateImport.tiles(px, W: W, H: H)
+        XCTAssertEqual(Set(tiles.keys), [Tiles.key(1, 0), Tiles.key(0, 1)], "empty tiles are left out")
+        XCTAssertEqual(alphaAt(tiles, 280, 10), 255)
+        XCTAssertEqual(alphaAt(tiles, 5, 290), 255)
+        XCTAssertEqual(alphaAt(tiles, 281, 10), 0)
+    }
+
     func testSVGExportIsWellFormed() {
         let d = AppModel.makeSampler()
         let svg = Exporter.svg(d)
