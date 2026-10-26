@@ -32,6 +32,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private let aboveLayer = CALayer()
     private let liveContainer = CALayer()
     private let liveClip = CAShapeLayer()
+    // The stroke being drawn: finished stretches sit in their own shape layers (drawn once), liveLayer is the tail.
+    // They're filled opaque inside liveGroup, which carries the stroke's opacity, so their overlaps never darken.
+    private let liveGroup = CALayer()
     private let liveLayer = CAShapeLayer()
     // Eraser preview: shows what lies under the current layer (paper + layers below) through the eraser's shape.
     // Each eraser outline is its own mask shape, so going back over a spot can never "un-erase" it.
@@ -72,7 +75,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let original: StrokeItem
         var active = false
         var drag: Drag?
-        enum Kind { case move, lineEnd(Int), axis(Int) }
+        enum Kind { case move, lineEnd(Int), axis(Int), curveEnd(Int), bend }
         struct Drag { let kind: Kind; let touch: ObjectIdentifier; let isFinger: Bool; let startDoc: V2; let grab: V2; let startShape: SnappedShape; var screen: CGPoint }
         init(layer: Layer, item: StrokeItem, shape: SnappedShape) { self.layer = layer; self.item = item; self.shape = shape; start = shape; original = item }
     }
@@ -87,7 +90,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let erase: Bool
         let whole: Bool
         var smoother: Smoother
-        var emitter: CurveEmitter
+        var line: Centerline
+        var frozen = 0                         // points up to here are drawn by `chunks` and never change
+        var chunks: [CAShapeLayer] = []
         var raw: [V2] = []
         var tip: V2
         var pen: V2
@@ -97,7 +102,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let opacity: Double
         let isPencil: Bool
         let isFinger: Bool
-        var preview: [Double]? = nil
+        var preview: [Double] = []             // predicted run past the head (drawn only, never kept)
         var snapped: SnappedShape? = nil
         var snapPts: [Double] = []
         var snapP = 0.5
@@ -109,9 +114,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var holdFingers: Set<ObjectIdentifier> = []  // fingers put down while holding a snapped shape: constrain it
         var lastIn: (p: CGPoint, pr: Double, t: Double)? = nil
         var lastFeedWall: CFTimeInterval = 0
-        init(id: ObjectIdentifier?, brush: Brush, erase: Bool, smoother: Smoother, emitter: CurveEmitter, at p: V2, screen: CGPoint, color: String, opacity: Double, isPencil: Bool, isFinger: Bool) {
+        init(id: ObjectIdentifier?, brush: Brush, erase: Bool, smoother: Smoother, line: Centerline, at p: V2, screen: CGPoint, color: String, opacity: Double, isPencil: Bool, isFinger: Bool) {
             self.id = id; self.brush = brush; self.erase = erase; self.whole = erase && brush.mode == "whole"
-            self.smoother = smoother; self.emitter = emitter; self.tip = p; self.pen = p; self.startScreen = screen
+            self.smoother = smoother; self.line = line; self.tip = p; self.pen = p; self.startScreen = screen
             self.t0 = CACurrentMediaTime(); self.color = color; self.opacity = opacity; self.isPencil = isPencil; self.isFinger = isFinger
             self.holdAnchor = screen
         }
@@ -131,6 +136,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var base: [CGPoint] = []
         var picking = false
         var longWork: DispatchWorkItem?
+        var cancelled = false          // iOS decided one of its touches was a palm
+        var palm = false               // a touch the size of the side of a hand
+        var landed: CFTimeInterval = 0 // from the first finger landing to the last
         init(count: Int, view: CGAffineTransform) { maxCount = count; s0 = view.scaleFactor; vStart = view; v0 = view }
     }
     private var gesture: Gesture?
@@ -138,6 +146,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private var pickTouch: ObjectIdentifier?
     private var cursor: CGPoint?
     private var lastPencilAction: CFTimeInterval = 0
+    private var lastPencilUp: CFTimeInterval = 0
+    private var lastViewGesture: CFTimeInterval = 0    // a pan, pinch or turn of the canvas ended
+    private static let palmRadius: CGFloat = 28        // fingertips are well under this; the side of a hand is over it
 
     init(model: AppModel) {
         self.model = model
@@ -191,7 +202,10 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         revealLayer.isHidden = true
         revealBelow.contentsGravity = .resize
         activeLayer.addSublayer(liveContainer)
-        liveContainer.addSublayer(liveLayer)
+        liveGroup.anchorPoint = .zero
+        liveGroup.position = .zero
+        liveContainer.addSublayer(liveGroup)
+        liveGroup.addSublayer(liveLayer)
         liveContainer.mask = liveClip
         liveLayer.fillRule = .nonZero
         for l in [belowLayer, activeLayer, aboveLayer] { l.contentsGravity = .resize; l.magnificationFilter = .linear }
@@ -212,7 +226,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         let s = window?.screen.scale ?? UIScreen.main.scale
-        for l in [pageLayer, contentLayer, belowLayer, activeLayer, aboveLayer, liveContainer, liveLayer, overlay, revealLayer, revealPaper, revealBelow, revealMask, liveClip,
+        for l in [pageLayer, contentLayer, belowLayer, activeLayer, aboveLayer, liveContainer, liveGroup, liveLayer, overlay, revealLayer, revealPaper, revealBelow, revealMask, liveClip,
                   cursorRing, cursorRingInner, loupeTop, loupeBottom, editGuide, editHandles] { l.contentsScale = s }
         becomeFirstResponder()
     }
@@ -227,7 +241,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let dw = bounds.width - lastSize.width, dh = bounds.height - lastSize.height
         lastSize = bounds.size
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for l in [contentLayer, belowLayer, activeLayer, aboveLayer, liveContainer, overlay, revealLayer, revealBelow, revealMask] { l.bounds = CGRect(origin: .zero, size: bounds.size) }
+        for l in [contentLayer, belowLayer, activeLayer, aboveLayer, liveContainer, liveGroup, overlay, revealLayer, revealBelow, revealMask] { l.bounds = CGRect(origin: .zero, size: bounds.size) }
         liveLayer.frame = CGRect(origin: .zero, size: bounds.size)
         CATransaction.commit()
         if first || model.doc == nil { view = fitTransform() } else { view = view.concatenating(CGAffineTransform(translationX: dw / 2, y: dh / 2)) }
@@ -311,6 +325,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         belowLayer.contents = nil; activeLayer.contents = nil; aboveLayer.contents = nil
         liveLayer.path = nil; revealLayer.isHidden = true; revealMask.sublayers?.forEach { $0.removeFromSuperlayer() }
+        liveGroup.sublayers?.forEach { if $0 !== liveLayer { $0.removeFromSuperlayer() } }
+        liveGroup.opacity = 1
         CATransaction.commit()
         view = fitTransform()
         renderedView = view
@@ -411,21 +427,56 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit(); updateEraseMask(); refreshOverlay() }
         guard let st = stroke, !st.whole else { liveLayer.path = nil; return }
-        var shape = st.brush.shape
-        shape.sim = !st.isPencil && st.snapped == nil
-        if case .ellipse? = st.snapped { shape.ts = 0; shape.te = 0 }
-        let pts = st.snapped != nil ? st.snapPts : (st.preview ?? st.emitter.live())
-        let o = StrokeGeometry.outline(pts, shape, last: st.snapped != nil)
-        let path = StrokeGeometry.path(o, transform: renderedView)
+        let path: CGPath
+        if st.snapped != nil {
+            clearChunks(st)
+            path = StrokeGeometry.path(StrokeGeometry.outline(st.snapPts), transform: renderedView)
+        } else {
+            let b = st.brush.shape
+            if !st.erase { freezeChunks(st, b) }
+            // the tail: from the last frozen point to the head, then the predicted run
+            let from = st.erase ? 0 : st.frozen
+            let pts = st.line.flat(from: from) + st.line.provisional + st.preview
+            let s0 = from < st.line.count ? st.line.s[from] : 0
+            path = StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, b, s0: s0)), transform: renderedView)
+        }
         if st.erase {
             liveLayer.path = nil
             liveErasePath = path
         } else {
             liveLayer.path = path
-            liveLayer.fillColor = cgColor(hex: st.color, alpha: CGFloat(st.opacity))
+            liveLayer.fillColor = cgColor(hex: st.color)
         }
     }
     private var liveErasePath: CGPath?
+
+    /// Hands finished stretches of the live stroke to their own shape layers, drawn once, so each frame only
+    /// rebuilds the short tail: the cost stays flat however long the stroke gets.
+    private func freezeChunks(_ st: Stroke, _ b: BrushShape) {
+        let chunk = 48
+        guard st.line.settled else { return }
+        // the end taper and the curve's newest segment can still change; everything further back is final
+        let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom)
+        let color = cgColor(hex: st.color)
+        while st.frozen + chunk < st.line.count && st.line.length - st.line.s[st.frozen + chunk] > keepBack {
+            let a = st.frozen, e = st.frozen + chunk
+            let pts = StrokeGeometry.bake(st.line.flat(from: a, to: e), b, s0: st.line.s[a], endTaper: false)
+            let l = CAShapeLayer()
+            l.contentsScale = screenScale
+            l.fillRule = .nonZero
+            l.fillColor = color
+            l.path = StrokeGeometry.path(StrokeGeometry.outline(pts), transform: renderedView)
+            liveGroup.insertSublayer(l, below: liveLayer)
+            st.chunks.append(l)
+            st.frozen = e
+        }
+    }
+    private func clearChunks(_ st: Stroke) {
+        if st.chunks.isEmpty { return }
+        st.chunks.forEach { $0.removeFromSuperlayer() }
+        st.chunks = []
+        st.frozen = 0
+    }
 
     private func updateEraseMask() {
         var shapes: [(CGPath, Double)] = pendingErase.map { ($0.path, $0.opacity) }
@@ -469,11 +520,16 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let erase = model.tool == .eraser
         let dp = toDoc(p)
         let z = Double(zoom)
-        let st = Stroke(id: id, brush: b, erase: erase, smoother: Smoother(model.smoothing(for: b)),
-                        emitter: CurveEmitter(minDist: 0.3 / z, spacing: 2 / z), at: V2(Double(dp.x), Double(dp.y)), screen: p,
+        let sm = Smoother(model.smoothing(for: b))
+        // spacing and distances are on screen, so lines feel the same at every zoom
+        let line = Centerline(spacing: 2 / z, minDist: 0.3 / z, startLen: 3 / z, pressureDist: (1 + sm.o.slp * 30) / z)
+        let st = Stroke(id: id, brush: b, erase: erase, smoother: sm, line: line, at: V2(Double(dp.x), Double(dp.y)), screen: p,
                         color: model.prefs.color, opacity: erase ? model.prefs.opacityEraser : model.prefs.opacityBrush,
                         isPencil: isPencil, isFinger: isFinger)
         endShapeEdit()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        liveGroup.opacity = erase ? 1 : Float(st.opacity)
+        CATransaction.commit()
         stroke = st
         cursor = nil
         feed(st, p, raw: raw, time: time)
@@ -498,7 +554,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let out = st.smoother.push(Sample(x: Double(li.p.x), y: Double(li.p.y), p: li.pr, t: li.t + idle * 1000))
         if out.isEmpty { return }
         emit(st, out)
-        st.preview = nil
+        st.preview = []
         updateLive()
     }
 
@@ -516,24 +572,27 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private func emit(_ st: Stroke, _ list: [Sample]) {
         for q in list {
             let dp = toDoc(CGPoint(x: q.x, y: q.y))
-            st.emitter.add(Double(dp.x), Double(dp.y), q.p)
+            st.line.add(Double(dp.x), Double(dp.y), q.p)
             st.tip = V2(Double(dp.x), Double(dp.y))
             if st.whole { eraseWholeAt(st, dp) }
         }
     }
 
+    /// Predicted touches run through a copy of the smoothing (a few numbers, cheap to copy) and are drawn past the head
+    /// at the current pressure. They never become part of the stroke.
     private func predict(_ st: Stroke, _ touches: [UITouch]) {
-        guard st.snapped == nil, !touches.isEmpty else { st.preview = nil; return }
-        var sm = st.smoother, em = st.emitter
+        guard st.snapped == nil, !touches.isEmpty else { st.preview = []; return }
+        var sm = st.smoother
+        let pr = st.line.pressure
+        var extra: [Double] = []
         for t in touches {
             let p = t.location(in: self)
-            let pr = st.isPencil ? model.pressure(pressure(t)) : 0.5
             for q in sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t.timestamp * 1000)) {
                 let dp = toDoc(CGPoint(x: q.x, y: q.y))
-                em.add(Double(dp.x), Double(dp.y), q.p)
+                extra.append(Double(dp.x)); extra.append(Double(dp.y)); extra.append(pr)
             }
         }
-        st.preview = em.live()
+        st.preview = extra
     }
 
     private func finishStroke(cancel: Bool) {
@@ -543,16 +602,34 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         st.holdWork?.cancel()
         liveErasePath = nil
         guard let d = model.doc else { return }
+        // the stroke's live layers go once it's handed over (or dropped)
+        func dropLive() {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            clearChunks(st)
+            liveLayer.path = nil
+            liveGroup.opacity = 1
+            CATransaction.commit()
+        }
         if cancel {
             if st.whole && !st.removed.isEmpty { restore(st.removed); model.docChanged(activeOnly: true) }
-            CATransaction.begin(); CATransaction.setDisableActions(true); liveLayer.path = nil; CATransaction.commit()
+            dropLive()
             updateEraseMask(); refreshOverlay()
             return
         }
-        var pts: [Double]
+        var shape = st.brush.shape
+        shape.sim = false
+        if case .ellipse? = st.snapped { shape.ts = 0; shape.te = 0 }
+        let pts: [Double]               // x, y, radius
         var freehand: [Double] = []
-        if st.snapped != nil { pts = st.snapPts; freehand = st.emitter.finish() }
-        else { emit(st, st.smoother.flush()); pts = st.emitter.finish() }
+        if st.snapped != nil {
+            pts = st.snapPts
+            st.line.finish()
+            freehand = StrokeGeometry.bake(st.line.flat(), st.brush.shape)
+        } else {
+            emit(st, st.smoother.flush())
+            st.line.finish()
+            pts = StrokeGeometry.bake(st.line.flat(), shape)
+        }
         if st.whole {
             if !st.removed.isEmpty {
                 let rem = st.removed
@@ -564,16 +641,12 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             refreshOverlay()
             return
         }
-        if pts.isEmpty { updateLive(); return }
-        var shape = st.brush.shape
-        shape.sim = !st.isPencil && st.snapped == nil
-        if case .ellipse? = st.snapped { shape.ts = 0; shape.te = 0 }
-        guard let L = d.activeLayer, !L.locked else { updateLive(); return }
+        if pts.isEmpty { dropLive(); updateLive(); return }
+        guard let L = d.activeLayer, !L.locked else { dropLive(); updateLive(); return }
         let item = Item.stroke(StrokeItem(id: newID(), m: st.erase ? "e" : "d", c: st.color, o: r3(st.opacity), b: shape, p: roundPts(pts)))
         if let snapped = st.snapped, case .stroke(let si) = item {
             // two steps, so an accidental snap undoes back to the line you drew
-            var fs = st.brush.shape
-            fs.sim = !st.isPencil
+            let fs = st.brush.shape
             if freehand.count >= 6 {
                 let free = Item.stroke(StrokeItem(id: newID(), m: st.erase ? "e" : "d", c: st.color, o: r3(st.opacity), b: fs, p: roundPts(freehand)))
                 L.items.append(free)
@@ -594,8 +667,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         // keep showing the stroke as a vector shape until the bitmap that includes it arrives
         let gen = requestAppend(item)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let o = StrokeGeometry.outline(pts, shape, last: true)
-        let path = StrokeGeometry.path(o, transform: renderedView)
+        let path = StrokeGeometry.path(StrokeGeometry.outline(pts), transform: renderedView)
         if st.erase {
             pendingErase.append((path, st.opacity, gen))
         } else {
@@ -604,11 +676,11 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             keep.frame = liveLayer.frame
             keep.path = path
             keep.fillColor = cgColor(hex: st.color, alpha: CGFloat(st.opacity))
-            liveContainer.insertSublayer(keep, below: liveLayer)
+            liveContainer.insertSublayer(keep, below: liveGroup)
             pending.append((keep, gen))
         }
-        liveLayer.path = nil
         CATransaction.commit()
+        dropLive()
         updateEraseMask()
         refreshOverlay()
         model.markDirty()
@@ -657,31 +729,36 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         guard st.snapped == nil, model.prefs.snap else { return }
         if hypot(p.x - st.holdAnchor.x, p.y - st.holdAnchor.y) > 4 { armHold(st, p) }
     }
-    private func trySnap(_ st: Stroke) {
+    private func trySnap(_ st: Stroke, now: Bool = false) {
         guard stroke === st, st.snapped == nil else { return }
+        // only once the line has caught up with the resting pencil: waiting on smoothing is not holding
+        if !now && (st.tip - st.pen).length * Double(zoom) > 3 {
+            let w = DispatchWorkItem { [weak self, weak st] in if let st = st { self?.trySnap(st) } }
+            st.holdWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: w)
+            return
+        }
         // fit the line as drawn (after smoothing), so the shape lands where the line is
-        let live = st.emitter.live()
+        let line = st.line
         var drawn: [V2] = []
-        drawn.reserveCapacity(live.count / 3)
-        var i = 0
-        while i + 1 < live.count { drawn.append(V2(live[i], live[i + 1])); i += 3 }
+        drawn.reserveCapacity(line.count + 1)
+        for k in 0..<line.count { drawn.append(V2(line.x[k], line.y[k])) }
+        if let h = line.head, let l = drawn.last, h.dist(l) > 1e-9 { drawn.append(h) }
         var len = 0.0
         for k in stride(from: 1, to: drawn.count, by: 1) { len += drawn[k].dist(drawn[k - 1]) }
         if len * Double(zoom) < 40 { return }
-        guard let shape = ShapeFit.fit(drawn) else { return }
-        var ps: [Double] = []
-        i = 2
-        while i < live.count { ps.append(live[i]); i += 3 }
-        ps.sort()
+        guard let shape = ShapeFit.fit(drawn, zoom: Double(zoom)) else { return }
+        let ps = line.p.sorted()
         st.snapP = ps.isEmpty ? 0.5 : ps[ps.count / 2]
         st.snapBase = shape
         st.snapPen = st.pen
         st.snapped = shape
-        st.preview = nil
+        st.preview = []
         adjustSnap(st)
         switch shape {
         case .line: model.toast("Line · keep holding to adjust it, add a finger for 15° steps")
         case .ellipse(let e): model.toast((e.circle ? "Circle" : "Ellipse") + " · keep holding to resize or turn it, add a finger for a circle")
+        case .curve: model.toast("Curve · keep holding to adjust it, add a finger for a perfect arc")
         }
         updateLive()
     }
@@ -711,10 +788,23 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             }
             if constrain && !el.circle { let r = (el.r1 + el.r2) / 2; el.r1 = r; el.r2 = r }
             shape = .ellipse(el)
+        case .curve(let cv):
+            // the far end follows the pencil; the bend keeps its shape. A finger makes it a perfect arc.
+            var c = cv.mapped(fix: cv.start, from: cv.end, to: cv.end + d)
+            if constrain, let arc = Curve.arc(c.start, c.mid, c.end) { c = arc }
+            shape = .curve(c)
         }
         st.snapped = shape
-        st.snapPts = shape.points(pressure: st.snapP, zoom: Double(zoom))
+        st.snapPts = StrokeGeometry.bake(shape.points(pressure: st.snapP, zoom: Double(zoom)), shapeBrush(st.brush.shape, shape))
         if st.snapPts.count >= 3 { st.tip = V2(st.snapPts[st.snapPts.count - 3], st.snapPts[st.snapPts.count - 2]) }
+    }
+
+    /// Closed shapes have no ends to taper.
+    private func shapeBrush(_ b: BrushShape, _ shape: SnappedShape) -> BrushShape {
+        var s = b
+        s.sim = false
+        if case .ellipse = shape { s.ts = 0; s.te = 0 }
+        return s
     }
 
     private func roundPts(_ pts: [Double]) -> [Double] {
@@ -761,7 +851,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             let old = Item.stroke(se.original)
             var ni = se.item
             ni.id = newID()
-            ni.p = roundPts(se.shape.points(pressure: pressureOf(se.item), zoom: Double(zoom)))
+            ni.p = roundPts(StrokeGeometry.bake(se.shape.points(pressure: pressureOf(se.item), zoom: Double(zoom)), shapeBrush(se.item.b, se.shape)))
             let new = Item.stroke(ni)
             L.items[idx] = new
             committed = ni
@@ -780,14 +870,20 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             keep.frame = liveLayer.frame
             keep.path = path
             keep.fillColor = cgColor(hex: it.c, alpha: CGFloat(it.o))
-            liveContainer.insertSublayer(keep, below: liveLayer)
+            liveContainer.insertSublayer(keep, below: liveGroup)
             pending.append((keep, gen))
         }
         liveLayer.path = nil
         CATransaction.commit()
         refreshOverlay()
     }
-    private func pressureOf(_ s: StrokeItem) -> Double { s.p.count >= 3 ? s.p[2] : 0.5 }
+    /// A snapped shape is drawn at one pressure: recover it from its widest point.
+    private func pressureOf(_ s: StrokeItem) -> Double {
+        var r = 0.0
+        var i = 2
+        while i < s.p.count { r = max(r, s.p[i]); i += 3 }
+        return StrokeGeometry.pressure(fromRadius: r, s.b)
+    }
     private func dropShapeEdit() {
         if shapeEdit?.active == true { CATransaction.begin(); CATransaction.setDisableActions(true); liveLayer.path = nil; CATransaction.commit() }
         shapeEdit = nil
@@ -797,8 +893,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     }
     private func showEditedShape() {
         guard let se = shapeEdit else { return }
-        let pts = se.shape.points(pressure: pressureOf(se.item), zoom: Double(zoom))
-        let o = StrokeGeometry.outline(pts, se.item.b, last: true)
+        let pts = StrokeGeometry.bake(se.shape.points(pressure: pressureOf(se.item), zoom: Double(zoom)), shapeBrush(se.item.b, se.shape))
+        let o = StrokeGeometry.outline(pts)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         liveLayer.path = StrokeGeometry.path(o, transform: renderedView)
         liveLayer.fillColor = cgColor(hex: se.item.c, alpha: CGFloat(se.item.o))
@@ -809,6 +905,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         switch s {
         case .line(let a, let b): return [a, b]
         case .ellipse(let e): return e.handles
+        case .curve(let c): return [c.start, c.mid, c.end]
         }
     }
     private func editBegan(_ t: UITouch) -> Bool {
@@ -821,7 +918,11 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var kind: ShapeEdit.Kind? = nil
         var grab = V2(0, 0)
         for (i, h) in handlePoints(se.shape).enumerated() where h.dist(d) < hitR {
-            if case .line = se.shape { kind = .lineEnd(i) } else { kind = .axis(i) }
+            switch se.shape {
+            case .line: kind = .lineEnd(i)
+            case .ellipse: kind = .axis(i)
+            case .curve: kind = i == 1 ? ShapeEdit.Kind.bend : ShapeEdit.Kind.curveEnd(i == 0 ? 0 : 1)
+            }
             grab = h - d
             break
         }
@@ -836,6 +937,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
                 let lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca
                 let rx = e.r1 + hitR, ry = e.r2 + hitR
                 if (lx * lx) / (rx * rx) + (ly * ly) / (ry * ry) <= 1 { kind = .move }
+            case .curve(let c):
+                if c.sampled(perSegment: 24).contains(where: { $0.dist(d) < hitR }) { kind = .move }
             }
         }
         guard let k = kind else {
@@ -869,6 +972,13 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             if i % 2 == 0 { e.r1 = r; e.angle = ang + (i == 2 ? .pi : 0) } else { e.r2 = r; e.angle = ang + (i == 1 ? -.pi / 2 : .pi / 2) }
             if e.circle { e.r1 = r; e.r2 = r }
             se.shape = .ellipse(e)
+        case (.move, .curve(let c)):
+            se.shape = .curve(c.moved(by: d - dr.startDoc))
+        case (.curveEnd(let i), .curve(let c)):
+            // turn and scale about the other end, so the bend keeps its shape
+            se.shape = .curve(i == 0 ? c.mapped(fix: c.end, from: c.start, to: target) : c.mapped(fix: c.start, from: c.end, to: target))
+        case (.bend, .curve(let c)):
+            se.shape = .curve(c.bent(to: target))
         default: break
         }
         showEditedShape()
@@ -938,7 +1048,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         guard let st = stroke, st.id == ObjectIdentifier(t) else { return }
         let list = event?.coalescedTouches(for: t) ?? [t]
         for c in list { feed(st, c.location(in: self), raw: pressure(c), time: c.timestamp * 1000) }
-        if st.smoother.o.light { predict(st, event?.predictedTouches(for: t) ?? []) } else { st.preview = nil }
+        if st.smoother.o.light { predict(st, event?.predictedTouches(for: t) ?? []) } else { st.preview = [] }
         holdMoved(st, t.location(in: self))
         updateLive()
     }
@@ -946,8 +1056,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if pickTouch == ObjectIdentifier(t) { pickTouch = nil; endPick(); return }
         guard let st = stroke, st.id == ObjectIdentifier(t) else { return }
         if !cancelled { feed(st, t.location(in: self), raw: pressure(t), time: t.timestamp * 1000) }
-        st.preview = nil
-        finishStroke(cancel: cancelled && st.emitter.out.count < 18)
+        st.preview = []
+        lastPencilUp = CACurrentMediaTime()
+        finishStroke(cancel: cancelled && st.line.count < 6)
     }
 
     private func fingerBegan(_ t: UITouch) {
@@ -973,10 +1084,15 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         }
         if pick != nil && gesture == nil { return }
         if let g = gesture { g.maxCount = max(g.maxCount, fingers.count); rebase() } else { gestureStart() }
+        if let g = gesture {
+            g.landed = CACurrentMediaTime() - g.t0
+            if t.majorRadius > CanvasView.palmRadius { g.palm = true }
+        }
     }
     private func fingerMoved(_ t: UITouch, _ event: UIEvent?) -> Bool {
         let id = ObjectIdentifier(t)
         guard var f = fingers[id] else { return false }
+        if t.majorRadius > CanvasView.palmRadius { gesture?.palm = true }
         f.p = t.location(in: self)
         fingers[id] = f
         if f.picker { movePick(f.p); return false }
@@ -996,6 +1112,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         fingerOrder.removeAll { $0 == id }
         if f.picker { endPick(); return }
         if let st = stroke, st.id == id { finishStroke(cancel: cancelled); return }
+        if cancelled { gesture?.cancelled = true }
         if gesture != nil { if fingers.isEmpty { gestureEnd() } else { rebase() } }
     }
 
@@ -1023,7 +1140,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private func gestureMove() {
         guard let g = gesture else { return }
         let fs = orderedFingers()
-        for f in fs where hypot(f.p.x - f.start.x, f.p.y - f.start.y) > 10 { g.moved = true }
+        for f in fs where hypot(f.p.x - f.start.x, f.p.y - f.start.y) > 8 { g.moved = true }
         if g.picking { if let f = fs.first { movePick(f.p) }; return }
         if g.moved { g.longWork?.cancel() }
         guard fs.count >= 2, g.base.count >= 2 else { return }   // one finger never moves the canvas (palm safety)
@@ -1052,8 +1169,14 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         gesture = nil
         g.longWork?.cancel()
         if g.picking { endPick(); return }
-        let dur = CACurrentMediaTime() - g.t0
-        if !g.moved && dur < 0.32 {
+        let now = CACurrentMediaTime()
+        let dur = now - g.t0
+        // a tap is quick and still, made by fingertips that land together, and is never the hand settling back down
+        // just after a pinch or a stroke (that's what used to undo by accident)
+        let tap = !g.moved && !g.cancelled && !g.palm && dur < 0.25 && g.landed < 0.12
+            && now - lastViewGesture > 0.4 && now - lastPencilUp > 0.15
+        if g.moved && g.maxCount >= 2 { lastViewGesture = now }
+        if tap {
             switch g.maxCount {
             case 2: model.undo()
             case 3: model.redo()
@@ -1252,9 +1375,61 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             let y: CGFloat = c.y + CGFloat(sin(a) * 130 * r)
             feed(st, CGPoint(x: x, y: y), raw: 0.5, time: t)
         }
-        trySnap(st)
+        trySnap(st, now: true)
         finishStroke(cancel: false)
         editButtonTapped()
+    }
+
+    /// A wrinkled arch, held: it snaps to a smooth curve through its own ends, then opens for editing.
+    func demoArch() {
+        let a = CGPoint(x: bounds.midX - 260, y: bounds.midY + 120)
+        var t = CACurrentMediaTime() * 1000
+        beginStroke(at: a, raw: 0.5, time: t, id: nil, isPencil: true, isFinger: false)
+        guard let st = stroke else { return }
+        for i in 1...150 {
+            t += 8
+            let u = Double(i) / 150
+            let x: CGFloat = a.x + CGFloat(520 * u + 3 * sin(u * 41))
+            let y: CGFloat = a.y - CGFloat(260 * sin(Double.pi * pow(u, 0.8)) + 4 * cos(u * 33))
+            feed(st, CGPoint(x: x, y: y), raw: 0.5, time: t)
+        }
+        trySnap(st, now: true)
+        finishStroke(cancel: false)
+        editButtonTapped()
+    }
+
+    /// Quick flicks: 2 ms apart, so the line has to keep up with a fast hand.
+    func demoFast() {
+        for row in 0..<4 {
+            var t = CACurrentMediaTime() * 1000
+            let c = CGPoint(x: bounds.midX - 300 + CGFloat(row) * 200, y: bounds.midY)
+            beginStroke(at: CGPoint(x: c.x, y: c.y - 200), raw: 0.3, time: t, id: nil, isPencil: true, isFinger: false)
+            guard let st = stroke else { return }
+            for i in 1...90 {
+                t += 2
+                let u = Double(i) / 90
+                let x: CGFloat = c.x + CGFloat(70 * sin(u * Double.pi * 3))
+                let y: CGFloat = c.y - 200 + CGFloat(400 * u)
+                feed(st, CGPoint(x: x, y: y), raw: 0.25 + 0.6 * sin(Double.pi * u), time: t)
+            }
+            finishStroke(cancel: false)
+        }
+    }
+
+    /// A stroke caught mid-draw (the pencil still down): what's on screen must match what lands when it lifts.
+    func demoMidstroke() {
+        let base = CGPoint(x: bounds.midX - 260, y: bounds.midY)
+        var t = CACurrentMediaTime() * 1000
+        beginStroke(at: base, raw: 0.05, time: t, id: nil, isPencil: true, isFinger: false)
+        guard let st = stroke else { return }
+        for i in 1...110 {
+            t += 8
+            let x = base.x + CGFloat(i) * 4
+            let y = base.y + sin(CGFloat(i) / 12) * 50
+            feed(st, CGPoint(x: x, y: y), raw: min(0.7, 0.05 + Double(i) / 30), time: t)
+        }
+        st.holdWork?.cancel()
+        updateLive()
     }
 
     func demoStrokes() {

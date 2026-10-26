@@ -1,6 +1,6 @@
 import Foundation
 
-/// Fast JSON writer for drawings (same format as `Doc`'s Codable output, which the web version reads).
+/// Fast JSON writer for drawings (the same format as `Doc`'s Codable output).
 /// Saving works from a snapshot, so it runs off the main thread while you keep drawing.
 enum DocWriter {
     struct LayerShot {
@@ -64,7 +64,7 @@ enum DocWriter {
                     w.key("g"); w.num(s.b.g); w.comma()
                     w.key("sim"); w.num(s.b.sim ? 1 : 0)
                     w.raw("}"); w.comma()
-                    w.key("p"); w.raw("[")
+                    w.key("r"); w.raw("[")
                     for (k, v) in s.p.enumerated() { if k > 0 { w.comma() }; w.num(v) }
                     w.raw("]}")
                 case .image(let im):

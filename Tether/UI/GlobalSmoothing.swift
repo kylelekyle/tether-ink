@@ -122,7 +122,7 @@ struct GlobalSmoothingView: View {
             SectionLabel("Shapes")
             Toggle("Hold at the end of a stroke to snap it", isOn: model.bind(\.snap))
             SettingSlider(label: "Hold time", value: model.bind(\.snapDelay), range: 0.25...1.2, step: 0.01, format: { String(format: "%.2f s", $0) },
-                          hint: "Lines become straight; closed loops become ellipses or circles. Keep holding a line to swing its angle.")
+                          hint: "Lines become straight, arches become smooth curves, closed loops become ellipses or circles. Keep holding to adjust the shape.")
             SectionLabel("Pressure curve")
             PressureCurveEditor(live: live)
             Text("Drag the points. Tap the graph to add a point; drag one off the graph to remove it. Draw on the pad to see your pressure on the curve.")

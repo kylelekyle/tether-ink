@@ -1,6 +1,7 @@
 import Foundation
 
-// The document format matches the web version's backup files (.tether.json), so drawings move freely between them.
+// Drawings are saved as .tether.json. Version 2 stores each stroke as its centerline with the radius baked in;
+// version 1 files (pressure instead of radius) are converted when they load.
 
 struct BrushShape: Codable, Equatable {
     var size: Double
@@ -42,9 +43,35 @@ struct StrokeItem: Codable, Equatable {
     var m: String          // "d" draw, "e" erase
     var c: String          // hex colour
     var o: Double          // opacity
-    var b: BrushShape
-    var p: [Double]        // x, y, pressure triples in canvas units
+    var b: BrushShape      // the brush it was drawn with (for re-editing snapped shapes)
+    var p: [Double]        // x, y, radius triples in canvas units (pressure and tapers already applied)
     var isErase: Bool { m == "e" }
+
+    enum CodingKeys: String, CodingKey { case id, m, c, o, b, r, p }
+}
+
+extension StrokeItem {
+    // In an extension so the memberwise initialiser stays available.
+    init(from d: Decoder) throws {
+        let k = try d.container(keyedBy: CodingKeys.self)
+        id = (try? k.decode(String.self, forKey: .id)) ?? newID()
+        m = (try? k.decode(String.self, forKey: .m)) ?? "d"
+        c = (try? k.decode(String.self, forKey: .c)) ?? "#111111"
+        o = clampD((try? k.decode(Double.self, forKey: .o)) ?? 1, 0, 1)
+        b = (try? k.decode(BrushShape.self, forKey: .b)) ?? BrushShape(size: 3, thin: 0, ts: 0, te: 0, sm: 0.5, sl: 0, g: 1, sim: false)
+        if let r = try? k.decode([Double].self, forKey: .r) {
+            p = r
+        } else if let v1 = try? k.decode([Double].self, forKey: .p) {
+            p = StrokeGeometry.migrateV1(v1, b)      // version 1: pressure triples
+        } else {
+            throw DecodingError.keyNotFound(CodingKeys.r, .init(codingPath: d.codingPath, debugDescription: "a stroke without points"))
+        }
+    }
+    func encode(to e: Encoder) throws {
+        var k = e.container(keyedBy: CodingKeys.self)
+        try k.encode(id, forKey: .id); try k.encode(m, forKey: .m); try k.encode(c, forKey: .c)
+        try k.encode(o, forKey: .o); try k.encode(b, forKey: .b); try k.encode(p, forKey: .r)
+    }
 }
 
 struct ImageItem: Codable, Equatable {
@@ -71,7 +98,11 @@ enum Item: Codable, Equatable {
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         let t = try c.decodeIfPresent(String.self, forKey: .t) ?? "s"
-        if t == "i" { self = .image(try ImageItem(from: d)) } else { self = .stroke(try StrokeItem(from: d)) }
+        switch t {
+        case "i": self = .image(try ImageItem(from: d))
+        case "s": self = .stroke(try StrokeItem(from: d))
+        default: throw DecodingError.dataCorruptedError(forKey: .t, in: c, debugDescription: "unknown item type")
+        }
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: K.self)
@@ -122,7 +153,7 @@ final class Layer: Codable, Identifiable {
 private struct Skip: Decodable { init(from decoder: Decoder) throws {} }
 
 final class Doc: Codable, Identifiable {
-    var v = 1
+    var v = 2
     var id: String
     var name: String
     var w: Double

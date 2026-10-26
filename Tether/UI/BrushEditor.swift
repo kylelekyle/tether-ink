@@ -6,14 +6,17 @@ final class PadCanvas: UIView {
     weak var model: AppModel?
     var onPressure: ((Double?, Double?) -> Void)?
 
-    private var items: [(p: [Double], sim: Bool)] = []
+    private var items: [[Double]] = []       // x, y, pressure: re-drawn with the brush as it is edited
     private final class Live {
         let id: ObjectIdentifier
         var sm: Smoother
-        var em: CurveEmitter
+        var line: Centerline
         let pencil: Bool
-        var preview: [Double]? = nil
-        init(id: ObjectIdentifier, sm: Smoother, pencil: Bool) { self.id = id; self.sm = sm; em = CurveEmitter(minDist: 0.3, spacing: 2); self.pencil = pencil }
+        var preview: [Double] = []
+        init(id: ObjectIdentifier, sm: Smoother, pencil: Bool) {
+            self.id = id; self.sm = sm; self.pencil = pencil
+            line = Centerline(spacing: 2, minDist: 0.3, startLen: 3, pressureDist: 1 + sm.o.slp * 30)
+        }
     }
     private var live: Live?
 
@@ -39,7 +42,7 @@ final class PadCanvas: UIView {
             let pr: Double = 0.15 + 0.85 * pow(sin(Double.pi * t), 0.7)
             p.append(x); p.append(y); p.append(pr)
         }
-        items.append((p, false))
+        items.append(p)
         setNeedsDisplay()
     }
     override func layoutSubviews() { super.layoutSubviews(); seedIfEmpty() }
@@ -67,13 +70,15 @@ final class PadCanvas: UIView {
         guard let lv = live else { return }
         for t in touches where ObjectIdentifier(t) == lv.id {
             for c in event?.coalescedTouches(for: t) ?? [t] { feed(lv, c.location(in: self), pressure(c), c.timestamp * 1000) }
-            var sm = lv.sm, em = lv.em
+            var sm = lv.sm
+            var extra: [Double] = []
             for pt in (lv.sm.o.light ? event?.predictedTouches(for: t) ?? [] : []) {
                 let p = pt.location(in: self)
-                let pr = lv.pencil ? (model?.pressure(pressure(pt)) ?? 0.5) : 0.5
-                for q in sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: pt.timestamp * 1000)) { em.add(q.x, q.y, q.p) }
+                for q in sm.push(Sample(x: Double(p.x), y: Double(p.y), p: lv.line.pressure, t: pt.timestamp * 1000)) {
+                    extra.append(q.x); extra.append(q.y); extra.append(lv.line.pressure)
+                }
             }
-            lv.preview = em.live()
+            lv.preview = extra
         }
         setNeedsDisplay()
     }
@@ -82,10 +87,11 @@ final class PadCanvas: UIView {
 
     private func end(_ touches: Set<UITouch>) {
         guard let lv = live, touches.contains(where: { ObjectIdentifier($0) == lv.id }) else { return }
-        for q in lv.sm.flush() { lv.em.add(q.x, q.y, q.p) }
-        let pts = lv.em.finish()
+        for q in lv.sm.flush() { lv.line.add(q.x, q.y, q.p) }
+        lv.line.finish()
+        let pts = lv.line.flat()
         live = nil
-        if !pts.isEmpty { items.append((pts, !lv.pencil)) }
+        if !pts.isEmpty { items.append(pts) }
         onPressure?(nil, nil)
         setNeedsDisplay()
     }
@@ -93,8 +99,8 @@ final class PadCanvas: UIView {
     private func feed(_ lv: Live, _ p: CGPoint, _ raw: Double, _ t: Double) {
         let pr = lv.pencil ? (model?.pressure(raw) ?? raw) : raw
         if lv.pencil { onPressure?(raw, pr) }
-        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) { lv.em.add(q.x, q.y, q.p) }
-        lv.preview = nil
+        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) { lv.line.add(q.x, q.y, q.p) }
+        lv.preview = []
     }
 
     override func draw(_ rect: CGRect) {
@@ -102,14 +108,14 @@ final class PadCanvas: UIView {
         ctx.setFillColor(UIColor.white.cgColor)
         ctx.fill(bounds)
         ink().setFill()
+        let shape = brush.shape
         for it in items {
-            var s = brush.shape; s.sim = it.sim
-            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(it.p, s, last: true)))
+            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(it, shape))))
             ctx.fillPath(using: .winding)
         }
         if let lv = live {
-            var s = brush.shape; s.sim = !lv.pencil
-            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(lv.preview ?? lv.em.live(), s, last: false)))
+            let pts = lv.line.flat() + lv.line.provisional + lv.preview
+            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, shape))))
             ctx.fillPath(using: .winding)
         }
     }
@@ -223,14 +229,14 @@ struct BrushEditorView: View {
             switch tab {
             case .smoothing:
                 SectionLabel("Streamline")
-                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line eases after the pencil, ironing out small wobbles. Higher feels smoother and lags more.")
-                SettingSlider(label: "Pressure", value: bind("slPressure"), hint: "How gradually pressure changes. Higher builds thickness slowly for even, calm lines.")
+                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line eases after the pencil, ironing out small wobbles. It lets go as you speed up, so quick strokes stay on the pencil.")
+                SettingSlider(label: "Pressure", value: bind("slPressure"), hint: "How far the pencil travels before pressure fully changes. Higher builds thickness gradually for even, calm lines.")
                 SectionLabel("Stabilisation")
                 SettingSlider(label: "Amount", value: bind("stab"), hint: "Averages your movement over a stretch of the line. Straightens wobbly strokes.")
-                SettingSlider(label: "Speed", value: bind("stabSpeed"), hint: "How much faster strokes get smoothed more. At 0% slow and fast strokes are treated the same.")
+                SettingSlider(label: "Speed", value: bind("stabSpeed"), hint: "How much the stretch shrinks when you draw fast. Higher keeps quick strokes snappy.")
                 SectionLabel("Motion filtering")
-                SettingSlider(label: "Amount", value: bind("motion"), hint: "Removes the peaks of hand tremor instead of averaging them, so it works at any speed.")
-                SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "Adds back some of the natural flourish that filtering removes.")
+                SettingSlider(label: "Amount", value: bind("motion"), hint: "Filters out hand tremor. Strongest when you draw slowly; quick strokes pass straight through.")
+                SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "How soon the filtering lets go as you speed up. Higher keeps more of a quick flick's character.")
                 Text("Global smoothing (\(pct(model.prefs.gStab)) stabilisation, \(pct(model.prefs.gMotion)) motion filtering) adds on top of these.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Pressure and smoothing for all brushes") { model.showGlobal = true }.buttonStyle(.bordered)
@@ -249,7 +255,6 @@ struct BrushEditorView: View {
                 SectionLabel("Shape")
                 SettingSlider(label: "Default size", value: Binding(get: { sizeToV(draft?.size ?? 1) }, set: { v in draft?.size = (vToSize(v) * 100).rounded() / 100 }),
                               range: 0...1, step: 0.001, format: { fmtSize(vToSize($0)) }, hint: "The size this brush starts at. The side bar changes it while you draw.")
-                SettingSlider(label: "Edge smoothing", value: bind("smoothing"), hint: "Rounds off the outline of the stroke.")
             case .about:
                 SectionLabel("About this brush")
                 if model.isCustom(target.id) {

@@ -17,7 +17,7 @@ struct V2: Equatable {
 
     var length: Double { (x * x + y * y).squareRoot() }
     var length2: Double { x * x + y * y }
-    /// Perpendicular (same convention as perfect-freehand: [y, -x])
+    /// Perpendicular: [y, -x]
     var per: V2 { V2(y, -x) }
     var unit: V2 { let l = length; return l > 0 ? self / l : V2(0, 0) }
 

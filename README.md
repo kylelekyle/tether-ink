@@ -2,11 +2,12 @@
 
 A free vector drawing app for iPad, laid out like the drawing apps you already know, with proper stroke stabilisation:
 
-- **Streamline** (amount and pressure), **stabilisation** (amount and speed), **motion filtering** (amount and expression), per brush, plus global smoothing for every brush.
-- **Pressure curve** you can shape by hand, and **hold-to-snap** straight lines, ellipses and circles.
+- **Streamline** (amount and pressure), **stabilisation** (amount and speed), **motion filtering** (amount and expression), per brush, plus global smoothing for every brush. Each one lets go as you speed up, so quick strokes stay on the pencil.
+- **Pressure curve** you can shape by hand. Pressure only changes as the pencil travels, so pausing or pressing at the start never swells the line.
+- **Hold-to-snap** straight lines, smooth arches, ellipses and circles.
 - **Vector strokes** that stay sharp at any zoom, layers, a stroke eraser and a vector eraser, and SVG/PNG export.
 - **Apple Pencil double-tap** swaps brush and eraser; **squeeze** (Apple Pencil Pro) opens colours.
-- Drawings are saved in the app's folder, which shows up in the Files app. The `.tether.json` files are the same format as the web version.
+- Drawings are saved in the app's folder as `.tether.json` files, which show up in the Files app.
 
 ## Install with SideStore (free Apple Account)
 

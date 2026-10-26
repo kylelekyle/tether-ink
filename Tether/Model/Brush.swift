@@ -11,7 +11,7 @@ struct Brush: Codable, Identifiable, Equatable {
     var taperEnd: Double
     var smoothing: Double
     var gamma: Double
-    var streamline: Double = 0.25
+    var streamline: Double = 0.35
     var slPressure: Double = 0.15
     var stab: Double = 0
     var stabSpeed: Double = 0.5
@@ -68,14 +68,14 @@ struct Brush: Codable, Identifiable, Equatable {
 
     static let builtIn: [Brush] = [
         Brush(id: "studio", name: "Studio Pen", set: "inking", size: 3, thinning: 0.55, taperStart: 0.12, taperEnd: 0.28, smoothing: 0.5, gamma: 1),
-        Brush(id: "tech", name: "Technical Pen", set: "inking", size: 2, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.3),
+        Brush(id: "tech", name: "Technical Pen", set: "inking", size: 2, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.4),
         Brush(id: "fine", name: "Fine Liner", set: "inking", size: 1.4, thinning: 0.25, taperStart: 0.06, taperEnd: 0.1, smoothing: 0.5, gamma: 1),
-        Brush(id: "hair", name: "Hairline Taper", set: "inking", size: 2.4, thinning: 0.7, taperStart: 0.55, taperEnd: 0.8, smoothing: 0.55, gamma: 1.1, streamline: 0.3, stab: 0.1),
-        Brush(id: "gel", name: "Gel Pen", set: "inking", size: 2.6, thinning: 0.3, taperStart: 0.04, taperEnd: 0.08, smoothing: 0.5, gamma: 0.9, streamline: 0.15),
-        Brush(id: "brushpen", name: "Brush Pen", set: "inking", size: 6, thinning: 0.9, taperStart: 0.45, taperEnd: 0.7, smoothing: 0.6, gamma: 1.35, streamline: 0.35, slPressure: 0.3),
-        Brush(id: "ink", name: "Ink Brush", set: "paint", size: 9, thinning: 0.82, taperStart: 0.3, taperEnd: 0.55, smoothing: 0.6, gamma: 1.25, streamline: 0.35),
-        Brush(id: "round", name: "Round Fill", set: "paint", size: 40, thinning: 0.35, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1, streamline: 0.2),
-        Brush(id: "marker", name: "Flat Marker", set: "paint", size: 26, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.3)
+        Brush(id: "hair", name: "Hairline Taper", set: "inking", size: 2.4, thinning: 0.7, taperStart: 0.55, taperEnd: 0.8, smoothing: 0.55, gamma: 1.1, streamline: 0.4, stab: 0.1),
+        Brush(id: "gel", name: "Gel Pen", set: "inking", size: 2.6, thinning: 0.3, taperStart: 0.04, taperEnd: 0.08, smoothing: 0.5, gamma: 0.9, streamline: 0.25),
+        Brush(id: "brushpen", name: "Brush Pen", set: "inking", size: 6, thinning: 0.9, taperStart: 0.45, taperEnd: 0.7, smoothing: 0.6, gamma: 1.35, streamline: 0.45, slPressure: 0.3),
+        Brush(id: "ink", name: "Ink Brush", set: "paint", size: 9, thinning: 0.82, taperStart: 0.3, taperEnd: 0.55, smoothing: 0.6, gamma: 1.25, streamline: 0.45),
+        Brush(id: "round", name: "Round Fill", set: "paint", size: 40, thinning: 0.35, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1, streamline: 0.3),
+        Brush(id: "marker", name: "Flat Marker", set: "paint", size: 26, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.4)
     ]
 
     static let erasers: [Brush] = [

@@ -31,7 +31,7 @@ enum Exporter {
             for it in L.items {
                 switch it {
                 case .stroke(let s):
-                    let d = StrokeGeometry.svgPath(StrokeGeometry.outline(s.p, s.b, last: true))
+                    let d = StrokeGeometry.svgPath(StrokeGeometry.outline(s.p))
                     if d.isEmpty { continue }
                     let op = s.o < 1 ? " fill-opacity=\"\(num(s.o))\"" : ""
                     if s.isErase { erasers.append("<path d=\"\(d)\" fill=\"#000\"\(op)/>") }

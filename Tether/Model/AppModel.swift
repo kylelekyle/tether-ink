@@ -475,7 +475,8 @@ final class AppModel {
                     p.append(r2(x)); p.append(r2(y)); p.append(r3(pr))
                 }
                 var shape = b.shape; shape.size = r2(b.size * m)
-                let s = StrokeItem(id: newID(), m: "d", c: b.id == "marker" ? "#a9c2f5" : "#111111", o: 1, b: shape, p: p)
+                let baked: [Double] = StrokeGeometry.bake(p, shape).enumerated().map { $0.offset % 3 == 2 ? r3($0.element) : r2($0.element) }
+                let s = StrokeItem(id: newID(), m: "d", c: b.id == "marker" ? "#a9c2f5" : "#111111", o: 1, b: shape, p: baked)
                 (b.id == "marker" ? col : ink).items.append(.stroke(s))
             }
         }
@@ -497,6 +498,9 @@ final class AppModel {
         case "global": showGlobal = true
         case "gallery": refreshGallery(); showGallery = true
         case "draw": canvas?.demoStrokes()
+        case "fast": canvas?.demoFast()
+        case "midstroke": canvas?.demoMidstroke()
+        case "arch": canvas?.demoArch()
         case "size": sizeEntry = true
         case "nolayers": doc?.layers = []; doc?.active = ""; docVersion += 1; canvas?.contentChanged(activeOnly: false); panel = .layers
         default: break
