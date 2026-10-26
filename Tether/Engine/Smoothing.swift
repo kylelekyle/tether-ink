@@ -249,8 +249,9 @@ struct Centerline {
     private(set) var y: [Double] = []
     private(set) var p: [Double] = []
     private(set) var s: [Double] = []           // arc length at each point
+    private(set) var t: [Double] = []           // time (ms) at each point
     private(set) var settled = false
-    private var q: [(Double, Double, Double)] = []
+    private var q: [(Double, Double, Double, Double)] = []
     private var pf = 0.0
 
     init(spacing: Double, minDist: Double, startLen: Double, pressureDist: Double) {
@@ -261,9 +262,9 @@ struct Centerline {
     var length: Double { s.last ?? 0 }
     var head: V2? { q.last.map { V2($0.0, $0.1) } ?? (x.isEmpty ? nil : V2(x[x.count - 1], y[y.count - 1])) }
 
-    private mutating func emit(_ px: Double, _ py: Double, _ praw: Double) {
+    private mutating func emit(_ px: Double, _ py: Double, _ praw: Double, _ pt: Double) {
         guard let lx = x.last, let ly = y.last, let ls = s.last else {
-            x.append(px); y.append(py); p.append(praw); s.append(0)
+            x.append(px); y.append(py); p.append(praw); s.append(0); t.append(pt)
             pf = praw
             if startLen <= 0 { settled = true }
             return
@@ -277,14 +278,14 @@ struct Centerline {
         } else {
             pf += (praw - pf) * (1 - exp(-ds / pressureDist))
         }
-        x.append(px); y.append(py); p.append(pf); s.append(sNow)
+        x.append(px); y.append(py); p.append(pf); s.append(sNow); t.append(pt)
     }
 
-    private mutating func seg(_ p0: (Double, Double, Double), _ p1: (Double, Double, Double), _ p2: (Double, Double, Double), _ p3: (Double, Double, Double)) {
-        func dist(_ a: (Double, Double, Double), _ b: (Double, Double, Double)) -> Double { ((b.0 - a.0) * (b.0 - a.0) + (b.1 - a.1) * (b.1 - a.1)).squareRoot() }
+    private mutating func seg(_ p0: (Double, Double, Double, Double), _ p1: (Double, Double, Double, Double), _ p2: (Double, Double, Double, Double), _ p3: (Double, Double, Double, Double)) {
+        func dist(_ a: (Double, Double, Double, Double), _ b: (Double, Double, Double, Double)) -> Double { ((b.0 - a.0) * (b.0 - a.0) + (b.1 - a.1) * (b.1 - a.1)).squareRoot() }
         let d = dist(p1, p2)
         let k = max(1, min(40, Int((d / spacing).rounded(.up))))
-        func kn(_ a: (Double, Double, Double), _ b: (Double, Double, Double)) -> Double { max(1e-4, dist(a, b).squareRoot()) }
+        func kn(_ a: (Double, Double, Double, Double), _ b: (Double, Double, Double, Double)) -> Double { max(1e-4, dist(a, b).squareRoot()) }
         let t0 = 0.0
         let t1 = t0 + kn(p0, p1)
         let t2 = t1 + kn(p1, p2)
@@ -302,11 +303,11 @@ struct Centerline {
             let b1 = L(a1.0, a1.1, a2.0, a2.1, t0, t2, u)
             let b2 = L(a2.0, a2.1, a3.0, a3.1, t1, t3, u)
             let c = L(b1.0, b1.1, b2.0, b2.1, t1, t2, u)
-            emit(c.0, c.1, p1.2 + (p2.2 - p1.2) * t)
+            emit(c.0, c.1, p1.2 + (p2.2 - p1.2) * t, p1.3 + (p2.3 - p1.3) * t)
         }
     }
 
-    mutating func add(_ px: Double, _ py: Double, _ pr: Double) {
+    mutating func add(_ px: Double, _ py: Double, _ pr: Double, _ pt: Double = 0) {
         if let l = q.last {
             let dx = px - l.0, dy = py - l.1
             if (dx * dx + dy * dy).squareRoot() < minDist {
@@ -314,9 +315,9 @@ struct Centerline {
                 return
             }
         }
-        q.append((px, py, pr))
+        q.append((px, py, pr, pt))
         let n = q.count
-        if n == 1 { emit(px, py, pr); return }
+        if n == 1 { emit(px, py, pr, pt); return }
         if n >= 3 { seg(n >= 4 ? q[n - 4] : q[n - 3], q[n - 3], q[n - 2], q[n - 1]) }
         if q.count > 4 { q.removeFirst() }
     }
@@ -335,6 +336,60 @@ struct Centerline {
         out.reserveCapacity((end - from + 2) * 3)
         for i in from...end { out.append(x[i]); out.append(y[i]); out.append(p[i]) }
         return out
+    }
+
+    /// The line as it is drawn: each point smoothed by a Gaussian centred on it (so nothing lags), first over time
+    /// (`sigmaT` ms: motion filtering) then over arc length (`sigmaS` canvas units: stabilisation).
+    /// The window shrinks evenly toward either end, so the line starts and ends exactly on the pen,
+    /// and the last few points keep settling as the pencil moves on.
+    func settled(from: Int = 0, to: Int? = nil, sigmaT: Double, sigmaS: Double) -> [Double] {
+        let n = count
+        let end = min(to ?? (n - 1), n - 1)
+        guard from <= end, from >= 0 else { return [] }
+        if sigmaT <= 0 && sigmaS <= 0 { return flat(from: from, to: end) }
+        // the first pass must cover everything the second pass looks at
+        var a = from, b = end
+        if sigmaS > 0 {
+            while a > 0 && s[from] - s[a - 1] <= 3 * sigmaS { a -= 1 }
+            while b < n - 1 && s[b + 1] - s[end] <= 3 * sigmaS { b += 1 }
+        }
+        var first: [V2] = []
+        first.reserveCapacity(b - a + 1)
+        for i in a...b {
+            first.append(sigmaT > 0
+                ? Centerline.centred(i, lo: 0, hi: n - 1, key: t, k0: t[0], k1: t[n - 1], sigma: sigmaT) { V2(x[$0], y[$0]) }
+                : V2(x[i], y[i]))
+        }
+        var out: [Double] = []
+        out.reserveCapacity((end - from + 1) * 3)
+        for i in from...end {
+            let q = sigmaS > 0
+                ? Centerline.centred(i, lo: a, hi: b, key: s, k0: s[0], k1: s[n - 1], sigma: sigmaS) { first[$0 - a] }
+                : first[i - a]
+            out.append(q.x); out.append(q.y); out.append(p[i])
+        }
+        return out
+    }
+    private static func centred(_ i: Int, lo: Int, hi: Int, key: [Double], k0: Double, k1: Double, sigma: Double, at: (Int) -> V2) -> V2 {
+        let half = min(3 * sigma, key[i] - k0, k1 - key[i])
+        if half <= 0 { return at(i) }
+        var sw = 0.0
+        var acc = V2(0, 0)
+        var j = i
+        while j >= lo && key[i] - key[j] <= half {
+            let d = (key[i] - key[j]) / sigma
+            let w = exp(-0.5 * d * d)
+            sw += w; acc = acc + at(j) * w
+            j -= 1
+        }
+        j = i + 1
+        while j <= hi && key[j] - key[i] <= half {
+            let d = (key[j] - key[i]) / sigma
+            let w = exp(-0.5 * d * d)
+            sw += w; acc = acc + at(j) * w
+            j += 1
+        }
+        return acc / sw
     }
 
     /// While drawing: a straight run from the last committed point to the newest sample (its curve isn't known yet).

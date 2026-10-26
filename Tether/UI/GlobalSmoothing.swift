@@ -118,7 +118,6 @@ struct GlobalSmoothingView: View {
             SectionLabel("Smoothing for every brush")
             SettingSlider(label: "Stabilisation", value: model.bind(\.gStab), hint: "Adds to each brush's own stabilisation.")
             SettingSlider(label: "Motion filtering", value: model.bind(\.gMotion), hint: "Adds to each brush's own motion filtering.")
-            SettingSlider(label: "Motion filtering expression", value: model.bind(\.gMotionExpr))
             SectionLabel("Shapes")
             Toggle("Hold at the end of a stroke to snap it", isOn: model.bind(\.snap))
             SettingSlider(label: "Hold time", value: model.bind(\.snapDelay), range: 0.25...1.2, step: 0.01, format: { String(format: "%.2f s", $0) },

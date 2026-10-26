@@ -162,6 +162,21 @@ final class EngineTests: XCTestCase {
         XCTAssertGreaterThan(line.count, 30)
     }
 
+    func testSettledLineStaysOnThePenAndLosesTheJitter() {
+        // a line at 300 pt/s with a 9 Hz ±2 pt hand tremor, motion filtering and stabilisation at 100%
+        var line = Centerline(spacing: 2, minDist: 0.3, startLen: 0, pressureDist: 1)
+        var t = 0.0
+        while t < 3000 { line.add(t * 0.3, 100 + 2 * sin(2 * .pi * 9 * t / 1000), 0.5, t); t += 1000 / 240 }
+        let out = line.settled(sigmaT: 50, sigmaS: 14)
+        let n = out.count / 3
+        XCTAssertEqual(n, line.count)
+        XCTAssertEqual(out[(n - 1) * 3], line.x[n - 1], accuracy: 1e-9, "the line ends on the pen")
+        XCTAssertEqual(out[(n - 1) * 3 + 1], line.y[n - 1], accuracy: 1e-9)
+        var worst = 0.0
+        for i in 0..<n where out[i * 3] > 100 && out[i * 3] < line.x[n - 1] - 100 { worst = max(worst, abs(out[i * 3 + 1] - 100)) }
+        XCTAssertLessThan(worst, 0.1, "the jitter is gone behind the pen")
+    }
+
     func testLiveStartMatchesWhatLands() {
         // a light landing that ramps up: the start drawn while the pencil is down must be the start that's kept
         let b = BrushShape(size: 3, thin: 0.55, ts: 0.12, te: 0, sm: 0.5, sl: 0, g: 1, sim: false)

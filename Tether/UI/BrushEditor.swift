@@ -13,10 +13,16 @@ final class PadCanvas: UIView {
         var line: Centerline
         let pencil: Bool
         var preview: [Double] = []
-        init(id: ObjectIdentifier, sm: Smoother, pencil: Bool) {
-            self.id = id; self.sm = sm; self.pencil = pencil
-            line = Centerline(spacing: 2, minDist: 0.3, startLen: 3, pressureDist: 1 + sm.o.slp * 30)
+        let settleT: Double, settleS: Double
+        init(id: ObjectIdentifier, params: SmoothParams, pencil: Bool) {
+            // as on the canvas: motion filtering and stabilisation settle the line behind the pen, streamline follows it
+            var p = params
+            settleT = 50 * p.mf; settleS = 14 * p.st
+            p.mf = 0; p.st = 0
+            self.id = id; self.sm = Smoother(p); self.pencil = pencil
+            line = Centerline(spacing: 2, minDist: 0.3, startLen: 3, pressureDist: 1 + p.slp * 30)
         }
+        var drawn: [Double] { line.settled(sigmaT: settleT, sigmaS: settleS) }
     }
     private var live: Live?
 
@@ -61,7 +67,7 @@ final class PadCanvas: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard live == nil, let t = touches.first, let m = model else { return }
         let p = t.location(in: self)
-        let lv = Live(id: ObjectIdentifier(t), sm: Smoother(m.smoothing(for: brush)), pencil: t.type == .pencil)
+        let lv = Live(id: ObjectIdentifier(t), params: m.smoothing(for: brush), pencil: t.type == .pencil)
         live = lv
         feed(lv, p, pressure(t), t.timestamp * 1000)
         setNeedsDisplay()
@@ -87,9 +93,9 @@ final class PadCanvas: UIView {
 
     private func end(_ touches: Set<UITouch>) {
         guard let lv = live, touches.contains(where: { ObjectIdentifier($0) == lv.id }) else { return }
-        for q in lv.sm.flush() { lv.line.add(q.x, q.y, q.p) }
+        for q in lv.sm.flush() { lv.line.add(q.x, q.y, q.p, q.t) }
         lv.line.finish()
-        let pts = lv.line.flat()
+        let pts = lv.drawn
         live = nil
         if !pts.isEmpty { items.append(pts) }
         onPressure?(nil, nil)
@@ -99,7 +105,7 @@ final class PadCanvas: UIView {
     private func feed(_ lv: Live, _ p: CGPoint, _ raw: Double, _ t: Double) {
         let pr = lv.pencil ? (model?.pressure(raw) ?? raw) : raw
         if lv.pencil { onPressure?(raw, pr) }
-        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) { lv.line.add(q.x, q.y, q.p) }
+        for q in lv.sm.push(Sample(x: Double(p.x), y: Double(p.y), p: pr, t: t)) { lv.line.add(q.x, q.y, q.p, q.t) }
         lv.preview = []
     }
 
@@ -114,7 +120,7 @@ final class PadCanvas: UIView {
             ctx.fillPath(using: .winding)
         }
         if let lv = live {
-            let pts = lv.line.flat() + lv.line.provisional + lv.preview
+            let pts = lv.drawn + lv.line.provisional + lv.preview
             ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, shape))))
             ctx.fillPath(using: .winding)
         }
@@ -229,14 +235,12 @@ struct BrushEditorView: View {
             switch tab {
             case .smoothing:
                 SectionLabel("Streamline")
-                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line eases after the pencil, ironing out small wobbles. The same at every speed; higher is smoother and trails further behind.")
+                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line trails behind the pencil like it's on a string, for long gliding curves. At 0% it comes straight from the pen.")
                 SettingSlider(label: "Pressure", value: bind("slPressure"), hint: "How far the pencil travels before pressure fully changes. Higher builds thickness gradually for even, calm lines.")
                 SectionLabel("Stabilisation")
-                SettingSlider(label: "Amount", value: bind("stab"), hint: "Averages your movement over a stretch of the line. Straightens wobbly strokes.")
-                SettingSlider(label: "Speed", value: bind("stabSpeed"), hint: "Gives faster strokes a longer stretch, so they get as much smoothing as slow ones. At 0% the stretch never changes.")
+                SettingSlider(label: "Amount", value: bind("stab"), hint: "Smooths the shape of the line just behind the pen; the end of the line always stays on the pen. Higher straightens wobbles over a longer stretch.")
                 SectionLabel("Motion filtering")
-                SettingSlider(label: "Amount", value: bind("motion"), hint: "Filters out hand tremor, the same way at every speed.")
-                SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "Lets the filtering ease off as you speed up, keeping more of a quick flick's character. At 0% every speed is filtered the same.")
+                SettingSlider(label: "Amount", value: bind("motion"), hint: "Removes hand jitter just behind the pen, with no lag. The same at every speed.")
                 Text("Global smoothing (\(pct(model.prefs.gStab)) stabilisation, \(pct(model.prefs.gMotion)) motion filtering) adds on top of these.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Pressure and smoothing for all brushes") { model.showGlobal = true }.buttonStyle(.bordered)

@@ -91,6 +91,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let whole: Bool
         var smoother: Smoother
         var line: Centerline
+        var settleT = 0.0                      // motion filtering: ms either side of each point
+        var settleS = 0.0                      // stabilisation: canvas units either side of each point
         var frozen = 0                         // points up to here are drawn by `chunks` and never change
         var chunks: [CAShapeLayer] = []
         var raw: [V2] = []
@@ -443,7 +445,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             if !st.erase { freezeChunks(st, b) }
             // the tail: from the last frozen point to the head, then the predicted run
             let from = st.erase ? 0 : st.frozen
-            let pts = st.line.flat(from: from) + st.line.provisional + st.preview
+            let pts = drawn(st, from: from) + st.line.provisional + st.preview
             let s0 = from < st.line.count ? st.line.s[from] : 0
             path = StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, b, s0: s0)), transform: renderedView)
         }
@@ -463,11 +465,14 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let chunk = 48
         guard st.line.settled else { return }
         // the end taper and the curve's newest segment can still change; everything further back is final
-        let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom)
+        // (and the centred smoothing still moves the points within its reach of the pen)
+        let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom) + 3 * st.settleS
+        let lastT = st.line.t.last ?? 0
         let color = cgColor(hex: st.color)
-        while st.frozen + chunk < st.line.count && st.line.length - st.line.s[st.frozen + chunk] > keepBack {
+        while st.frozen + chunk < st.line.count && st.line.length - st.line.s[st.frozen + chunk] > keepBack
+                && lastT - st.line.t[st.frozen + chunk] > 3 * st.settleT {
             let a = st.frozen, e = st.frozen + chunk
-            let pts = StrokeGeometry.bake(st.line.flat(from: a, to: e), b, s0: st.line.s[a], endTaper: false)
+            let pts = StrokeGeometry.bake(drawn(st, from: a, to: e), b, s0: st.line.s[a], endTaper: false)
             let l = CAShapeLayer()
             l.contentsScale = screenScale
             l.fillRule = .nonZero
@@ -477,6 +482,10 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             st.chunks.append(l)
             st.frozen = e
         }
+    }
+    /// The stroke's points as they're drawn: with motion filtering and stabilisation settled in.
+    private func drawn(_ st: Stroke, from: Int = 0, to: Int? = nil) -> [Double] {
+        st.line.settled(from: from, to: to, sigmaT: st.settleT, sigmaS: st.settleS)
     }
     private func clearChunks(_ st: Stroke) {
         if st.chunks.isEmpty { return }
@@ -528,12 +537,18 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let erase = model.tool == .eraser
         let dp = toDoc(p)
         let z = Double(zoom)
-        let sm = Smoother(model.smoothing(for: b))
+        // Motion filtering and stabilisation smooth the line just behind the pen (centred, so nothing lags);
+        // only streamline follows the pen with a lag, for those who want that rope-like glide.
+        var params = model.smoothing(for: b)
+        let settleT = 50 * params.mf, settleS = 14 * params.st / z
+        params.mf = 0; params.st = 0
+        let sm = Smoother(params)
         // spacing and distances are on screen, so lines feel the same at every zoom
         let line = Centerline(spacing: 2 / z, minDist: 0.3 / z, startLen: 3 / z, pressureDist: (1 + sm.o.slp * 30) / z)
         let st = Stroke(id: id, brush: b, erase: erase, smoother: sm, line: line, at: V2(Double(dp.x), Double(dp.y)), screen: p,
                         color: model.prefs.color, opacity: erase ? model.prefs.opacityEraser : model.prefs.opacityBrush,
                         isPencil: isPencil, isFinger: isFinger)
+        st.settleT = settleT; st.settleS = settleS
         endShapeEdit()
         CATransaction.begin(); CATransaction.setDisableActions(true)
         liveGroup.opacity = erase ? 1 : Float(st.opacity)
@@ -580,7 +595,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private func emit(_ st: Stroke, _ list: [Sample]) {
         for q in list {
             let dp = toDoc(CGPoint(x: q.x, y: q.y))
-            st.line.add(Double(dp.x), Double(dp.y), q.p)
+            st.line.add(Double(dp.x), Double(dp.y), q.p, q.t)
             st.tip = V2(Double(dp.x), Double(dp.y))
             if st.whole { eraseWholeAt(st, dp) }
         }
@@ -632,11 +647,11 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if st.snapped != nil {
             pts = st.snapPts
             st.line.finish()
-            freehand = StrokeGeometry.bake(st.line.flat(), st.brush.shape)
+            freehand = StrokeGeometry.bake(drawn(st), st.brush.shape)
         } else {
             emit(st, st.smoother.flush())
             st.line.finish()
-            pts = StrokeGeometry.bake(st.line.flat(), shape)
+            pts = StrokeGeometry.bake(drawn(st), shape)
         }
         if st.whole {
             if !st.removed.isEmpty {
@@ -752,14 +767,16 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         }
         // fit the line as drawn (after smoothing), so the shape lands where the line is
         let line = st.line
-        var drawn: [V2] = []
-        drawn.reserveCapacity(line.count + 1)
-        for k in 0..<line.count { drawn.append(V2(line.x[k], line.y[k])) }
-        if let h = line.head, let l = drawn.last, h.dist(l) > 1e-9 { drawn.append(h) }
+        let flat = drawn(st)
+        var pts: [V2] = []
+        pts.reserveCapacity(line.count + 1)
+        var k = 0
+        while k + 1 < flat.count { pts.append(V2(flat[k], flat[k + 1])); k += 3 }
+        if let h = line.head, let l = pts.last, h.dist(l) > 1e-9 { pts.append(h) }
         var len = 0.0
-        for k in stride(from: 1, to: drawn.count, by: 1) { len += drawn[k].dist(drawn[k - 1]) }
+        for j in stride(from: 1, to: pts.count, by: 1) { len += pts[j].dist(pts[j - 1]) }
         if len * Double(zoom) < 40 { return }
-        guard let shape = ShapeFit.fit(drawn, zoom: Double(zoom)) else { return }
+        guard let shape = ShapeFit.fit(pts, zoom: Double(zoom)) else { return }
         let ps = line.p.sorted()
         st.snapP = ps.isEmpty ? 0.5 : ps[ps.count / 2]
         st.snapBase = shape
