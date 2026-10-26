@@ -127,10 +127,28 @@ final class EngineTests: XCTestCase {
         return total / Double(max(n, 1))
     }
 
-    func testQuickCurvesStayOnThePencil() {
-        // a quick curve at 1000 pt/s; the old engine trailed by about 200 ms with all three at 100%
-        XCTAssertLessThan(lag(SmoothParams(mf: 1, mfx: 0.5, st: 1, sts: 0.5, sl: 1, slp: 0.5), speed: 1000), 25)
-        XCTAssertLessThan(lag(SmoothParams(sl: 0.25), speed: 1000), 2, "the Studio Pen's default streamline")
+    /// Tremor left on a line drawn at `speed` pt/s with a 9 Hz ±2 pt hand tremor.
+    private func tremorLeft(_ p: SmoothParams, speed: Double) -> Double {
+        var sm = Smoother(p)
+        var worst = 0.0
+        for i in 0..<1200 {
+            let t = Double(i) * 1000 / 240
+            for q in sm.push(Sample(x: t * speed / 1000, y: 100 + 2 * sin(2 * .pi * 9 * t / 1000), p: 0.5, t: t)) where i >= 300 {
+                worst = max(worst, abs(q.y - 100))
+            }
+        }
+        return worst
+    }
+
+    func testSmoothingIsTheSameAtEverySpeed() {
+        // fast strokes get the same smoothing as slow ones
+        for p in [SmoothParams(sl: 0.35), SmoothParams(sl: 1), SmoothParams(mf: 1), SmoothParams(mf: 0.5)] {
+            XCTAssertEqual(tremorLeft(p, speed: 150), tremorLeft(p, speed: 1000), accuracy: 0.03)
+        }
+        // and the line trails the pencil by the same time at any speed (the Studio Pen's default streamline)
+        let slow = lag(SmoothParams(sl: 0.35), speed: 400), fast = lag(SmoothParams(sl: 0.35), speed: 1200)
+        XCTAssertEqual(slow, fast, accuracy: 3)
+        XCTAssertLessThan(fast, 40)
     }
 
     // MARK: centerline and pressure
@@ -241,6 +259,48 @@ final class EngineTests: XCTestCase {
         for q in arc.sampled() { XCTAssertEqual(q.dist(c), r, accuracy: r * 0.002) }
         XCTAssertLessThan(arc.end.dist(V2(200, 0)), 1e-9)
         XCTAssertLessThan(arc.mid.dist(V2(100, 60)), r * 0.01)
+    }
+
+    // MARK: colour drop fill
+
+    private func ring(_ cx: Double, _ cy: Double, _ r: Double) -> Item {
+        var p: [Double] = []
+        for i in 0...240 { let a = Double(i) / 240 * 2 * .pi; p += [cx + r * cos(a), cy + r * sin(a), 0.6] }
+        let b = BrushShape(size: 3, thin: 0, ts: 0, te: 0, sm: 0.5, sl: 0, g: 1, sim: false)
+        return .stroke(StrokeItem(id: newID(), m: "d", c: "#111111", o: 1, b: b, p: StrokeGeometry.bake(p, b)))
+    }
+    /// Area covered with the even-odd rule, for one outer loop with holes inside it.
+    private func filledArea(_ polys: [[Double]]) -> Double {
+        let areas = polys.map { p -> Double in
+            var s = 0.0
+            var i = 0
+            while i + 1 < p.count { let j = (i + 2) % p.count; s += p[i] * p[j + 1] - p[j] * p[i + 1]; i += 2 }
+            return abs(s / 2)
+        }
+        guard let outer = areas.max() else { return 0 }
+        return outer - (areas.reduce(0, +) - outer)
+    }
+
+    func testColourDropFillsTheAreaInsideALoop() {
+        let full = Double.pi * 60 * 60
+        guard let polys = FloodFill.region([[ring(150, 100, 60)]], w: 300, h: 200, seed: V2(150, 100)) else { return XCTFail("expected a fill") }
+        XCTAssertEqual(polys.count, 1)
+        XCTAssertEqual(filledArea(polys), full, accuracy: full * 0.08, "fills up to the line, tucked under it")
+        // a shape inside the area stays a hole
+        guard let holed = FloodFill.region([[ring(150, 100, 60), ring(150, 100, 20)]], w: 300, h: 200, seed: V2(150, 55)) else { return XCTFail("expected a fill") }
+        XCTAssertEqual(holed.count, 2)
+        XCTAssertEqual(filledArea(holed), Double.pi * (60 * 60 - 20 * 20), accuracy: full * 0.08)
+        // dropped on a line: nothing
+        XCTAssertNil(FloodFill.region([[ring(150, 100, 60)]], w: 300, h: 200, seed: V2(210, 100)))
+    }
+
+    func testFillsSaveAndLoad() throws {
+        let d = AppModel.makeSampler()
+        let f = FillItem(id: "f1", c: "#e8a33d", o: 1, p: [[0, 0, 10, 0, 10, 10, 0, 10]])
+        d.layers[0].items.insert(.fill(f), at: 0)
+        let back = try JSONDecoder().decode(Doc.self, from: DocWriter.json(DocWriter.Snapshot(d)))
+        XCTAssertEqual(back.layers[0].items.first, .fill(f))
+        XCTAssertTrue(Exporter.svg(d).contains("evenodd"))
     }
 
     // MARK: saving

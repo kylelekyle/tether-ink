@@ -229,14 +229,14 @@ struct BrushEditorView: View {
             switch tab {
             case .smoothing:
                 SectionLabel("Streamline")
-                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line eases after the pencil, ironing out small wobbles. It lets go as you speed up, so quick strokes stay on the pencil.")
+                SettingSlider(label: "Amount", value: bind("streamline"), hint: "The line eases after the pencil, ironing out small wobbles. The same at every speed; higher is smoother and trails further behind.")
                 SettingSlider(label: "Pressure", value: bind("slPressure"), hint: "How far the pencil travels before pressure fully changes. Higher builds thickness gradually for even, calm lines.")
                 SectionLabel("Stabilisation")
                 SettingSlider(label: "Amount", value: bind("stab"), hint: "Averages your movement over a stretch of the line. Straightens wobbly strokes.")
-                SettingSlider(label: "Speed", value: bind("stabSpeed"), hint: "How much the stretch shrinks when you draw fast. Higher keeps quick strokes snappy.")
+                SettingSlider(label: "Speed", value: bind("stabSpeed"), hint: "Gives faster strokes a longer stretch, so they get as much smoothing as slow ones. At 0% the stretch never changes.")
                 SectionLabel("Motion filtering")
-                SettingSlider(label: "Amount", value: bind("motion"), hint: "Filters out hand tremor. Strongest when you draw slowly; quick strokes pass straight through.")
-                SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "How soon the filtering lets go as you speed up. Higher keeps more of a quick flick's character.")
+                SettingSlider(label: "Amount", value: bind("motion"), hint: "Filters out hand tremor, the same way at every speed.")
+                SettingSlider(label: "Expression", value: bind("motionExpr"), hint: "Lets the filtering ease off as you speed up, keeping more of a quick flick's character. At 0% every speed is filtered the same.")
                 Text("Global smoothing (\(pct(model.prefs.gStab)) stabilisation, \(pct(model.prefs.gMotion)) motion filtering) adds on top of these.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Pressure and smoothing for all brushes") { model.showGlobal = true }.buttonStyle(.bordered)

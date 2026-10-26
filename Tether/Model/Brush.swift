@@ -16,7 +16,7 @@ struct Brush: Codable, Identifiable, Equatable {
     var stab: Double = 0
     var stabSpeed: Double = 0.5
     var motion: Double = 0
-    var motionExpr: Double = 0.5
+    var motionExpr: Double = 0
     var mode: String? = nil     // erasers: "cut" or "whole"
     var note: String? = nil
 

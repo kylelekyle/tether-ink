@@ -36,6 +36,30 @@ struct RootView: View {
                     if !model.prefs.rightHand { Spacer(minLength: 0) }
                 }
                 .padding(.horizontal, 8)
+                if model.fillOffer || model.fillMode {
+                    VStack {
+                        Button(model.fillMode ? "Done filling" : "Continue filling") {
+                            if model.fillMode { model.endFilling() } else { model.fillMode = true; model.toast("Tap areas to fill them") }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(Color.accentColor, in: Capsule())
+                        .padding(.top, 66)
+                        Spacer()
+                    }
+                }
+            }
+            if let p = model.dropPoint {
+                // the colour being dragged out of the dock
+                Color.clear.ignoresSafeArea().overlay {
+                    Circle().fill(Color(uiColor: uiColor(hex: model.prefs.color)))
+                        .frame(width: 34, height: 34)
+                        .overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
+                        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                        .position(p)
+                }
+                .allowsHitTesting(false)
             }
             if let t = model.toastText {
                 VStack { Spacer(); ToastView(text: t).padding(.bottom, 24) }
@@ -111,6 +135,19 @@ struct TopBar: View {
                         .frame(width: 40, height: 38)
                 }
                 .accessibilityLabel("Colour")
+                // drag the colour out onto the canvas to fill an area (dropping it back near the dock cancels)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12, coordinateSpace: .global)
+                        .onChanged { g in
+                            if model.panel != nil { model.panel = nil }
+                            model.dropPoint = g.location
+                        }
+                        .onEnded { g in
+                            model.dropPoint = nil
+                            let moved = (g.translation.width * g.translation.width + g.translation.height * g.translation.height).squareRoot()
+                            if moved > 40 { model.canvas?.fill(atWindow: g.location) }
+                        }
+                )
                 .popover(isPresented: binding(.colour), arrowEdge: .top) { ColourPanel().environment(model).presentationCompactAdaptation(.popover) }
             }
             .modifier(Dock())

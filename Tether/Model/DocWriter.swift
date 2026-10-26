@@ -21,7 +21,15 @@ enum DocWriter {
     static func json(_ d: Snapshot) -> Data {
         var w = Writer()
         var n = 4096
-        for l in d.layers { for it in l.items { if case .stroke(let s) = it { n += 160 + s.p.count * 7 } else if case .image(let i) = it { n += 200 + i.src.utf8.count } } }
+        for l in d.layers {
+            for it in l.items {
+                switch it {
+                case .stroke(let s): n += 160 + s.p.count * 7
+                case .image(let i): n += 200 + i.src.utf8.count
+                case .fill(let f): n += 80 + f.p.reduce(0) { $0 + $1.count * 7 + 2 }
+                }
+            }
+        }
         w.o.reserveCapacity(n)
         w.raw("{")
         w.key("v"); w.num(Double(d.v)); w.comma()
@@ -78,6 +86,20 @@ enum DocWriter {
                     w.key("h"); w.num(im.h)
                     if let o = im.o { w.comma(); w.key("o"); w.num(o) }
                     w.raw("}")
+                case .fill(let f):
+                    w.raw("{")
+                    w.key("t"); w.str("f"); w.comma()
+                    w.key("id"); w.str(f.id); w.comma()
+                    w.key("c"); w.str(f.c); w.comma()
+                    w.key("o"); w.num(f.o); w.comma()
+                    w.key("p"); w.raw("[")
+                    for (pi, poly) in f.p.enumerated() {
+                        if pi > 0 { w.comma() }
+                        w.raw("[")
+                        for (k, v) in poly.enumerated() { if k > 0 { w.comma() }; w.num(v) }
+                        w.raw("]")
+                    }
+                    w.raw("]}")
                 }
             }
             w.raw("]}")

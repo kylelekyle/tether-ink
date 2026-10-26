@@ -11,9 +11,9 @@ struct Sample {
 /// Effective smoothing for one stroke (brush settings combined with the global ones).
 struct SmoothParams {
     var mf: Double = 0       // motion filtering amount
-    var mfx: Double = 0.5    // motion filtering expression: how soon it lets go as the pencil speeds up
+    var mfx: Double = 0      // motion filtering expression: lets the filtering ease off as the pencil speeds up (0 = same at every speed)
     var st: Double = 0       // stabilisation amount
-    var sts: Double = 0.5    // stabilisation speed: how much its stretch shrinks when drawing fast
+    var sts: Double = 0.5    // stabilisation speed: faster strokes get a longer stretch
     var sl: Double = 0       // streamline amount
     var slp: Double = 0      // streamline pressure: how far the pencil travels before pressure fully changes
     var catchUp: Bool = false  // on lift, run every stage on to the pencil
@@ -25,18 +25,17 @@ struct SmoothParams {
 }
 
 /// Raw pencil samples pass through, in order:
-/// 1. Motion filtering – two-stage One Euro low-pass (Casiez 2012): strong when slow, it lets go as the pencil speeds up,
-///                       so tremor goes but quick strokes stay on the pencil.
-/// 2. Stabilisation    – triangle-weighted average over a stretch of path (arc length); the stretch shrinks when drawing fast.
-/// 3. Streamline       – the line eases toward the pencil through two cascaded lags (critically damped, no overshoot);
-///                       the lag shortens as the pencil speeds up.
+/// 1. Motion filtering – two-stage low-pass in time: removes tremor the same way at every speed
+///                       (Expression can let it ease off for quick strokes, One Euro style).
+/// 2. Stabilisation    – triangle-weighted average over a stretch of path (arc length); faster strokes get a longer stretch.
+/// 3. Streamline       – the line eases toward the pencil through two cascaded lags (critically damped, no overshoot),
+///                       with the same time constant at every speed.
 /// With catch-up on, every stage runs on smoothly to the pencil when it lifts; otherwise the line stays as drawn.
 /// Every stage keeps a small, fixed amount of state, so a copy can be pushed ahead with predicted touches cheaply.
 struct Smoother {
     let o: SmoothParams
     // motion filtering
-    private let mfMin: Double        // cutoff (Hz) while the pencil is still
-    private let mfRelease: Double    // speed (pt/s) at which the cutoff has doubled; it grows with the square of speed
+    private let mfMin: Double        // cutoff (Hz): 12 Hz at 0%, 2 Hz at 100%
     private var mfPrev: Sample? = nil
     private var mfA = V2(0, 0)
     private var mfB = V2(0, 0)
@@ -61,8 +60,7 @@ struct Smoother {
 
     init(_ o: SmoothParams) {
         self.o = o
-        mfMin = 10 * pow(0.08, o.mf)
-        mfRelease = 250 * pow(0.24, o.mfx)
+        mfMin = 12 * pow(2.0 / 12.0, o.mf)
     }
 
     /// Low-pass blend factor for a cutoff (Hz) over a time step (ms).
@@ -81,7 +79,7 @@ struct Smoother {
         let dt = max(0.5, q.t - pv.t)
         let raw = V2((q.x - pv.x) / dt, (q.y - pv.y) / dt)
         mfV = mfV + (raw - mfV) * Smoother.alpha(5, dt)
-        let r: Double = mfV.length * 1000 / mfRelease
+        let r: Double = o.mfx * mfV.length * 1000 / 120     // with Expression at 0 the cutoff never moves
         let a = Smoother.alpha(mfMin * (1 + r * r), dt)
         let target = V2(q.x, q.y)
         mfA = mfA + (target - mfA) * a
@@ -130,8 +128,8 @@ struct Smoother {
             return
         }
         let h = Smoother.stStep
-        let fast = max(0, speed / 0.3 - 1)                       // above ~300 pt/s the stretch shrinks
-        let reach: Double = pow(o.st, 1.2) * 40 / (1 + (0.5 + o.sts) * fast)
+        let k = clampD(speed / 0.5, 1, 3)                        // faster strokes get a longer stretch
+        let reach: Double = pow(o.st, 1.2) * 40 * (1 + o.sts * (k - 1))
         let target = max(1, reach / h)
         let qv = V2(q.x, q.y)
         var d = a.dist(qv)
@@ -174,11 +172,8 @@ struct Smoother {
     }
 
     // MARK: streamline
-    /// Lag per stage in ms: up to 90 ms when slow, falling with the square of speed.
-    private var slTau: Double {
-        let v = speed / 0.25
-        return pow(o.sl, 1.5) * 90 / (1 + v * v)
-    }
+    /// Lag per stage in ms, the same at every speed: 90 ms at 100%.
+    private var slTau: Double { pow(o.sl, 1.5) * 90 }
     private mutating func slStep(_ x: Double, _ y: Double, _ dt: Double) {
         guard var a = slA, var b = slB else { return }
         let tau = slTau

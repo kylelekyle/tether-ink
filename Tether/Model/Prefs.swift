@@ -16,7 +16,7 @@ struct Prefs: Codable, Equatable {
     // smoothing for every brush
     var gStab = 0.0
     var gMotion = 0.0
-    var gMotionExpr = 0.5
+    var gMotionExpr = 0.0
     var curve: [[Double]] = [[0, 0], [1, 1]]
     var snap = true
     var snapDelay = 0.55

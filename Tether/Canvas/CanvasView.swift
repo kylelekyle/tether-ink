@@ -148,7 +148,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private var lastPencilAction: CFTimeInterval = 0
     private var lastPencilUp: CFTimeInterval = 0
     private var lastViewGesture: CFTimeInterval = 0    // a pan, pinch or turn of the canvas ended
-    private static let palmRadius: CGFloat = 28        // fingertips are well under this; the side of a hand is over it
+    private static let palmRadius: CGFloat = 45        // a firm fingertip can read 30+; the side of a hand reads far more
 
     init(model: AppModel) {
         self.model = model
@@ -254,6 +254,13 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     // MARK: - coordinates
 
     func toDoc(_ p: CGPoint) -> CGPoint { p.applying(view.inverted()) }
+    /// Drop the current colour at a point on screen (view coordinates).
+    func fill(atScreen p: CGPoint) {
+        let d = toDoc(p)
+        model.fill(at: V2(Double(d.x), Double(d.y)))
+    }
+    /// Drop the current colour at a point in window coordinates (from dragging the colour out of the dock).
+    func fill(atWindow p: CGPoint) { fill(atScreen: convert(p, from: nil)) }
     func toScreen(_ v: V2) -> CGPoint { CGPoint(x: v.x, y: v.y).applying(view) }
     var zoom: CGFloat { view.scaleFactor }
 
@@ -513,6 +520,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
 
     private func beginStroke(at p: CGPoint, raw: Double, time: Double, id: ObjectIdentifier?, isPencil: Bool, isFinger: Bool) {
         guard let d = model.doc else { return }
+        if model.fillOffer { model.fillOffer = false }
         guard let L = d.activeLayer else { model.toast("No layers. Tap + in Layers to add one."); return }
         if L.locked { model.toast("This layer is locked. Unlock it in Layers to draw on it."); return }
         if !L.visible { model.toast("This layer is hidden. Turn it on in Layers to draw on it."); return }
@@ -698,7 +706,11 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var hit = false
         var i = L.items.count - 1
         while i >= 0 {
-            if case .stroke(let s) = L.items[i], !s.isErase {
+            if case .fill(let f) = L.items[i], GeometryCache.shared.get(f).path.contains(pt, using: .evenOdd) {
+                st.removed.append((L, L.items[i], i))
+                L.items.remove(at: i)
+                hit = true
+            } else if case .stroke(let s) = L.items[i], !s.isErase {
                 let g = GeometryCache.shared.get(s)
                 if g.bbox.insetBy(dx: -r, dy: -r).contains(pt) {
                     let near = g.path.contains(pt, using: .winding)
@@ -1041,6 +1053,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         if let st = stroke { if st.isFinger { finishStroke(cancel: true) } else { return } }
         let p = t.location(in: self)
         if model.pickOnce { startPick(p); pickTouch = ObjectIdentifier(t); return }
+        if model.fillMode { fill(atScreen: p); return }
         beginStroke(at: p, raw: pressure(t), time: t.timestamp * 1000, id: ObjectIdentifier(t), isPencil: t.type == .pencil, isFinger: false)
     }
     private func penMoved(_ t: UITouch, _ event: UIEvent?) {
@@ -1072,7 +1085,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let id = ObjectIdentifier(t), p = t.location(in: self)
         fingers[id] = Finger(p: p, start: p)
         fingerOrder.append(id)
-        if model.prefs.fingerDraw && fingers.count == 1 && gesture == nil && stroke == nil {
+        if model.prefs.fingerDraw && !model.fillMode && fingers.count == 1 && gesture == nil && stroke == nil {
             if model.pickOnce { fingers[id]?.picker = true; startPick(p); return }
             beginStroke(at: p, raw: 0.5, time: t.timestamp * 1000, id: id, isPencil: false, isFinger: true)
             return
@@ -1140,7 +1153,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private func gestureMove() {
         guard let g = gesture else { return }
         let fs = orderedFingers()
-        for f in fs where hypot(f.p.x - f.start.x, f.p.y - f.start.y) > 8 { g.moved = true }
+        for f in fs where hypot(f.p.x - f.start.x, f.p.y - f.start.y) > 10 { g.moved = true }
         if g.picking { if let f = fs.first { movePick(f.p) }; return }
         if g.moved { g.longWork?.cancel() }
         guard fs.count >= 2, g.base.count >= 2 else { return }   // one finger never moves the canvas (palm safety)
@@ -1173,11 +1186,12 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let dur = now - g.t0
         // a tap is quick and still, made by fingertips that land together, and is never the hand settling back down
         // just after a pinch or a stroke (that's what used to undo by accident)
-        let tap = !g.moved && !g.cancelled && !g.palm && dur < 0.25 && g.landed < 0.12
-            && now - lastViewGesture > 0.4 && now - lastPencilUp > 0.15
+        let tap = !g.moved && !g.cancelled && !g.palm && dur < 0.35 && g.landed < 0.2
+            && now - lastViewGesture > 0.25 && now - lastPencilUp > 0.1
         if g.moved && g.maxCount >= 2 { lastViewGesture = now }
         if tap {
             switch g.maxCount {
+            case 1: if model.fillMode, let p = g.base.first { fill(atScreen: p) }
             case 2: model.undo()
             case 3: model.redo()
             case 4...: model.uiHidden.toggle()
@@ -1396,6 +1410,24 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         trySnap(st, now: true)
         finishStroke(cancel: false)
         editButtonTapped()
+    }
+
+    /// A loop drawn, then a colour dropped inside it (the "Continue filling" offer shows).
+    func demoFill() {
+        let c = CGPoint(x: bounds.midX, y: bounds.midY + 40)
+        var t = CACurrentMediaTime() * 1000
+        beginStroke(at: CGPoint(x: c.x + 200, y: c.y), raw: 0.5, time: t, id: nil, isPencil: true, isFinger: false)
+        guard let st = stroke else { return }
+        for i in 1...175 {
+            t += 8
+            let a: Double = Double(i) / 160 * 2 * Double.pi
+            let r: Double = 1 + 0.05 * sin(a * 4)
+            feed(st, CGPoint(x: c.x + CGFloat(cos(a) * 200 * r), y: c.y + CGFloat(sin(a) * 140 * r)), raw: 0.6, time: t)
+        }
+        st.holdWork?.cancel()
+        finishStroke(cancel: false)
+        model.setColor("#e8a33d")
+        fill(atScreen: c)
     }
 
     /// Quick flicks: 2 ms apart, so the line has to keep up with a fast hand.

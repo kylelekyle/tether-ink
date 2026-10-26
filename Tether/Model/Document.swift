@@ -85,12 +85,22 @@ struct ImageItem: Codable, Equatable {
     var opacity: Double { o ?? 1 }
 }
 
+/// A colour fill (from dropping a colour into an area): closed polygons in canvas units,
+/// filled with the even-odd rule so anything enclosed inside the area stays a hole.
+struct FillItem: Codable, Equatable {
+    var id: String
+    var c: String          // hex colour
+    var o: Double          // opacity
+    var p: [[Double]]      // polygons, each flat x, y, x, y, …
+}
+
 enum Item: Codable, Equatable {
     case stroke(StrokeItem)
     case image(ImageItem)
+    case fill(FillItem)
 
     var id: String {
-        switch self { case .stroke(let s): return s.id; case .image(let i): return i.id }
+        switch self { case .stroke(let s): return s.id; case .image(let i): return i.id; case .fill(let f): return f.id }
     }
     var isErase: Bool { if case .stroke(let s) = self { return s.isErase }; return false }
 
@@ -101,6 +111,7 @@ enum Item: Codable, Equatable {
         switch t {
         case "i": self = .image(try ImageItem(from: d))
         case "s": self = .stroke(try StrokeItem(from: d))
+        case "f": self = .fill(try FillItem(from: d))
         default: throw DecodingError.dataCorruptedError(forKey: .t, in: c, debugDescription: "unknown item type")
         }
     }
@@ -109,6 +120,7 @@ enum Item: Codable, Equatable {
         switch self {
         case .stroke(let s): try c.encode("s", forKey: .t); try s.encode(to: e)
         case .image(let i): try c.encode("i", forKey: .t); try i.encode(to: e)
+        case .fill(let f): try c.encode("f", forKey: .t); try f.encode(to: e)
         }
     }
 }

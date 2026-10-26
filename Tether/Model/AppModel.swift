@@ -60,6 +60,9 @@ final class AppModel {
     var librarySet: String? = nil
     var sizeBubble: String? = nil     // "size" | "opacity" while a side bar slider is dragged
     var sizeEntry = false             // the type-a-size box beside the side bar
+    var dropPoint: CGPoint? = nil     // where the colour being dragged out of the dock is (screen points)
+    var fillOffer = false             // after a colour drop: offer "Continue filling"
+    var fillMode = false              // taps fill areas instead of drawing
 
     @ObservationIgnored let history = History()
     @ObservationIgnored let store = Store()
@@ -172,7 +175,15 @@ final class AppModel {
 
     // MARK: tools and colour
 
-    func setTool(_ t: Tool) { tool = t; canvas?.refreshOverlay() }
+    func setTool(_ t: Tool) {
+        tool = t
+        endFilling()
+        canvas?.refreshOverlay()
+    }
+    func endFilling() {
+        if fillMode { fillMode = false }
+        if fillOffer { fillOffer = false }
+    }
     func toggleTool() {
         setTool(tool == .eraser ? .brush : .eraser)
         toast(tool == .eraser ? "Eraser" : "Brush")
@@ -342,6 +353,53 @@ final class AppModel {
         toast("Photo added under your layer at 60% opacity")
     }
 
+    // MARK: fill
+
+    /// Drop the current colour into the area around p (canvas units). The fill goes to the bottom of the current
+    /// layer, under its lines. Dropping onto an existing fill on this layer recolours it.
+    func fill(at p: V2) {
+        guard let d = doc, p.x >= 0, p.y >= 0, p.x <= d.w, p.y <= d.h else { return }
+        guard let L = d.activeLayer else { toast("No layers. Tap + in Layers to add one."); return }
+        if L.locked { toast("This layer is locked"); return }
+        if !L.visible { toast("This layer is hidden"); return }
+        let colour = prefs.color
+        let opacity = r3(prefs.opacityBrush)
+        canvas?.endShapeEdit()
+        let pt = CGPoint(x: p.x, y: p.y)
+        let hit = L.items.lastIndex { item in
+            if case .fill(let f) = item { return GeometryCache.shared.get(f).path.contains(pt, using: .evenOdd) }
+            return false
+        }
+        if let i = hit, case .fill(let old) = L.items[i] {
+            var nf = old
+            nf.c = colour; nf.o = opacity
+            if nf != old {
+                L.items[i] = .fill(nf)
+                push(HistoryEntry("Fill colour", undo: { if let j = L.items.firstIndex(where: { $0.id == old.id }) { L.items[j] = .fill(old) } },
+                                  redo: { if let j = L.items.firstIndex(where: { $0.id == old.id }) { L.items[j] = .fill(nf) } }))
+                docChanged(activeOnly: true)
+                rememberColor(colour)
+            }
+            if !fillOffer && !fillMode { fillOffer = true }
+            return
+        }
+        let layers = d.layers.filter { $0.visible }.map { $0.items }
+        let w = d.w, h = d.h
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let polys = FloodFill.region(layers, w: w, h: h, seed: p)
+            DispatchQueue.main.async {
+                guard let self = self, self.doc === d else { return }
+                guard let polys = polys else { self.toast("Drop the colour inside an area, not on a line"); return }
+                let item = Item.fill(FillItem(id: newID(), c: colour, o: opacity, p: polys))
+                L.items.insert(item, at: 0)
+                self.push(HistoryEntry("Fill", undo: { L.items.removeAll { $0.id == item.id } }, redo: { L.items.insert(item, at: 0) }))
+                self.docChanged(activeOnly: true)
+                self.rememberColor(colour)
+                if !self.fillOffer && !self.fillMode { self.fillOffer = true }
+            }
+        }
+    }
+
     // MARK: layers
 
     func selectLayer(_ id: String) { guard let d = doc, d.active != id else { return }; d.active = id; docVersion += 1; canvas?.contentChanged(activeOnly: false); markDirty() }
@@ -501,6 +559,7 @@ final class AppModel {
         case "fast": canvas?.demoFast()
         case "midstroke": canvas?.demoMidstroke()
         case "arch": canvas?.demoArch()
+        case "fill": canvas?.demoFill()
         case "size": sizeEntry = true
         case "nolayers": doc?.layers = []; doc?.active = ""; docVersion += 1; canvas?.contentChanged(activeOnly: false); panel = .layers
         default: break

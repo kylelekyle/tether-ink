@@ -77,6 +77,15 @@ enum DocRenderer {
                 ctx.setFillColor(s.isErase ? black : cgColor(hex: s.c))
                 ctx.addPath(g.path)
                 ctx.fillPath(using: .winding)
+            case .fill(let f):
+                let g = GeometryCache.shared.get(f)
+                if g.bbox.isNull { continue }
+                if let v = visible, !g.bbox.intersects(v) { continue }
+                ctx.setBlendMode(.normal)
+                ctx.setAlpha(CGFloat(f.o))
+                ctx.setFillColor(cgColor(hex: f.c))
+                ctx.addPath(g.path)
+                ctx.fillPath(using: .evenOdd)
             case .image(let im):
                 guard let cg = ImageCache.shared.get(im) else { continue }
                 ctx.setBlendMode(.normal)

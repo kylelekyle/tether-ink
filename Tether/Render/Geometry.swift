@@ -230,6 +230,32 @@ enum StrokeGeometry {
     }
 }
 
+extension StrokeGeometry {
+    /// Closed polygons (flat x, y lists) as straight-edged subpaths.
+    static func polygonsPath(_ polys: [[Double]], transform: CGAffineTransform? = nil) -> CGMutablePath {
+        let path = CGMutablePath()
+        let t = transform ?? .identity
+        for p in polys where p.count >= 6 {
+            path.move(to: CGPoint(x: p[0], y: p[1]), transform: t)
+            var i = 2
+            while i + 1 < p.count { path.addLine(to: CGPoint(x: p[i], y: p[i + 1]), transform: t); i += 2 }
+            path.closeSubpath()
+        }
+        return path
+    }
+    static func svgPolygons(_ polys: [[Double]]) -> String {
+        func f(_ v: Double) -> String { let r = (v * 100).rounded() / 100; return r == r.rounded() ? String(Int(r)) : String(r) }
+        var d = ""
+        for p in polys where p.count >= 6 {
+            d += "M\(f(p[0])) \(f(p[1]))L"
+            var i = 2
+            while i + 1 < p.count { d += "\(f(p[i])) \(f(p[i + 1])) "; i += 2 }
+            d = d.trimmingCharacters(in: .whitespaces) + "Z"
+        }
+        return d
+    }
+}
+
 /// Outline paths for committed strokes, cached by stroke id. Safe to use from the render queue.
 final class GeometryCache {
     static let shared = GeometryCache()
@@ -243,6 +269,17 @@ final class GeometryCache {
         let o = StrokeGeometry.outline(s.p)
         let entry = (StrokeGeometry.path(o), StrokeGeometry.bbox(o))
         lock.lock(); cache[s.id] = entry; lock.unlock()
+        return entry
+    }
+
+    /// A fill's polygons as one path (fill it with the even-odd rule). Recolouring keeps the id, so the path stays valid.
+    func get(_ f: FillItem) -> (path: CGPath, bbox: CGRect) {
+        lock.lock()
+        if let c = cache[f.id] { lock.unlock(); return c }
+        lock.unlock()
+        let path = StrokeGeometry.polygonsPath(f.p)
+        let entry = (path as CGPath, path.isEmpty ? CGRect.null : path.boundingBoxOfPath)
+        lock.lock(); cache[f.id] = entry; lock.unlock()
         return entry
     }
 

@@ -40,6 +40,12 @@ enum Exporter {
                     flushErase()
                     let op = im.opacity < 1 ? " opacity=\"\(num(im.opacity))\"" : ""
                     content += "<image href=\"\(im.src)\" x=\"\(num(im.x))\" y=\"\(num(im.y))\" width=\"\(num(im.w))\" height=\"\(num(im.h))\" preserveAspectRatio=\"none\"\(op)/>"
+                case .fill(let f):
+                    let d = StrokeGeometry.svgPolygons(f.p)
+                    if d.isEmpty { continue }
+                    flushErase()
+                    let op = f.o < 1 ? " fill-opacity=\"\(num(f.o))\"" : ""
+                    content += "<path d=\"\(d)\" fill=\"\(f.c)\" fill-rule=\"evenodd\"\(op)/>"
                 }
             }
             flushErase()
