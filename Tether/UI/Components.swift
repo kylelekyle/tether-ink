@@ -120,6 +120,9 @@ struct SizeEntry: View {
         }
         .padding(14)
         .frame(width: 260)
+        .background(Color.chrome, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
+        .shadow(color: .black.opacity(0.2), radius: 14, y: 6)
         .onAppear { DispatchQueue.main.async { focused = true } }
         .onDisappear(perform: apply)   // tapping outside keeps what was typed
     }

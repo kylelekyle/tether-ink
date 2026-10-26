@@ -25,6 +25,11 @@ struct RootView: View {
                     TopBar()
                     Spacer(minLength: 0)
                 }
+                if model.sizeEntry {
+                    // tap anywhere else to close the size box (without drawing)
+                    Color.clear.contentShape(Rectangle()).ignoresSafeArea()
+                        .onTapGesture { model.sizeEntry = false }
+                }
                 HStack(spacing: 0) {
                     if model.prefs.rightHand { Spacer(minLength: 0) }
                     SideBar()
@@ -38,6 +43,7 @@ struct RootView: View {
                     .allowsHitTesting(false)
             }
         }
+        .ignoresSafeArea(.keyboard)   // the keyboard never pushes the bars around
         .animation(.easeOut(duration: 0.15), value: model.toastText)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -157,13 +163,15 @@ struct SideBar: View {
             VStack(spacing: 10) {
                 VSlider(value: sizeToV(model.currentSize), onChange: { model.currentSize = vToSize($0) },
                         onDrag: { on, fine in bubble = on ? ("size", fine) : nil },
-                        onTap: { model.sizeEntry = true })
+                        onTap: { model.sizeEntry.toggle() })
                     .frame(height: 190)
                     .accessibilityLabel("Brush size")
                     .accessibilityAction(named: "Type a size") { model.sizeEntry = true }
-                    .popover(isPresented: Binding(get: { model.sizeEntry }, set: { if !$0 { model.sizeEntry = false } }),
-                             arrowEdge: model.prefs.rightHand ? .leading : .trailing) {
-                        SizeEntry().environment(model).presentationCompactAdaptation(.popover)
+                    // pinned beside the slider, outside the side bar (48 wide, slider inset 9, 10 gap)
+                    .overlay(alignment: model.prefs.rightHand ? .trailing : .leading) {
+                        if model.sizeEntry {
+                            SizeEntry().fixedSize().offset(x: model.prefs.rightHand ? -49 : 49)
+                        }
                     }
                 Button { model.pickOnce.toggle(); if model.pickOnce { model.toast("Touch the canvas to pick a colour") } } label: {
                     Image(systemName: "eyedropper").font(.system(size: 14, weight: .semibold))
