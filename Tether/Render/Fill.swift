@@ -119,7 +119,8 @@ enum FloodFill {
                     v = w
                 } while v != s0
                 let poly = simplify(loop, 0.35)
-                if poly.count >= 3 && abs(area(poly)) >= 3 {
+                // pockets the tuck-under step leaves inside a line are dust under the ink, not real holes
+                if poly.count >= 3 && abs(area(poly)) >= 25 {
                     out.append(poly.flatMap { [$0.x / k, $0.y / k] })
                 }
             }
