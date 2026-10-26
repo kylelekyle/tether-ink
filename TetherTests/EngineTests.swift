@@ -318,6 +318,74 @@ final class EngineTests: XCTestCase {
         XCTAssertTrue(Exporter.svg(d).contains("evenodd"))
     }
 
+    // MARK: importing
+
+    /// A zip with one stored (uncompressed) entry, built by hand.
+    private func storedZip(_ name: String, _ content: Data) -> Data {
+        var d = Data()
+        func u16(_ v: Int) { d.append(UInt8(v & 0xff)); d.append(UInt8(v >> 8 & 0xff)) }
+        func u32(_ v: Int) { u16(v & 0xffff); u16(v >> 16 & 0xffff) }
+        let nb = Array(name.utf8)
+        u32(0x0403_4b50); u16(20); u16(0); u16(0); u16(0); u16(0); u32(0); u32(content.count); u32(content.count); u16(nb.count); u16(0)
+        d.append(contentsOf: nb); d.append(content)
+        let cd = d.count
+        u32(0x0201_4b50); u16(20); u16(20); u16(0); u16(0); u16(0); u16(0); u32(0); u32(content.count); u32(content.count)
+        u16(nb.count); u16(0); u16(0); u16(0); u16(0); u32(0); u32(0)
+        d.append(contentsOf: nb)
+        let size = d.count - cd
+        u32(0x0605_4b50); u16(0); u16(0); u16(1); u16(1); u32(size); u32(cd); u16(0)
+        return d
+    }
+
+    func testZipReaderReadsAnEntry() {
+        let zip = storedZip("folder/hello.txt", Data("hello".utf8))
+        guard let z = ZipReader(zip) else { return XCTFail("expected a zip") }
+        XCTAssertEqual(z.names, ["folder/hello.txt"])
+        XCTAssertEqual(z.read("folder/hello.txt"), Data("hello".utf8))
+        XCTAssertNil(z.read("missing"))
+    }
+
+    func testProcreateBrushSettingsBecomeAVectorBrush() {
+        let pb = PBrush(name: "Liner", nums: ["minSize": 0.01, "maxSize": 0.2, "paintSize": 0.25, "dynamicsPressureSize": 0.8,
+                                              "plotSmoothing": 0.4, "pencilTaperStartLength": 0.2])
+        let arch = NSKeyedArchiver(requiringSecureCoding: false)
+        arch.setClassName("SilicaBrush", for: PBrush.self)
+        arch.encode(pb, forKey: NSKeyedArchiveRootObjectKey)
+        arch.finishEncoding()
+        guard let r = BrushImport.procreate(storedZip("Brush.archive", arch.encodedData), fileName: "Liner.brush") else { return XCTFail("expected a brush") }
+        XCTAssertEqual(r.vector.count, 1)
+        XCTAssertEqual(r.pixel.count, 1, "the original is kept for pixel layers")
+        let b = r.vector[0]
+        XCTAssertEqual(b.name, "Liner")
+        XCTAssertTrue(b.set.hasPrefix("imp:"))
+        XCTAssertEqual(b.streamline, 0.4, accuracy: 1e-9)
+        XCTAssertEqual(b.thinning, 0.72, accuracy: 1e-9)
+        XCTAssertEqual(b.taperStart, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(b.size, ((0.01 + 0.19 * 0.25) * 120 * 100).rounded() / 100, accuracy: 1e-9)
+    }
+
+    func testTracingSplitsALayerIntoColourFills() {
+        // a red disc inside a black ring, premultiplied RGBA like a Procreate layer
+        let W = 80, H = 60
+        var px = [UInt8](repeating: 0, count: W * H * 4)
+        for y in 0..<H {
+            for x in 0..<W {
+                let d = V2(Double(x) - 40, Double(y) - 30).length
+                let i = (y * W + x) * 4
+                if d < 20 { px[i] = 220; px[i + 1] = 40; px[i + 2] = 40; px[i + 3] = 255 }
+                if d >= 20 && d < 24 { px[i + 3] = 255 }
+            }
+        }
+        let items = ProcreateImport.trace(px, W: W, H: H)
+        let colours = items.compactMap { item -> String? in
+            if case .fill(let f) = item { return f.c }
+            return nil
+        }
+        XCTAssertEqual(colours.count, 2)
+        XCTAssertTrue(colours.contains("#dc2c2c"), "the red disc")
+        XCTAssertTrue(colours.contains("#040404"), "the black ring")
+    }
+
     // MARK: saving
 
     func testFastWriterMatchesTheDecoder() throws {

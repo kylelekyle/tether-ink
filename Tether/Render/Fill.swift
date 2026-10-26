@@ -88,42 +88,11 @@ enum FloodFill {
             if frontier.isEmpty { break }
         }
 
-        // 4. trace pixel edges, clockwise around the region (y down)
-        let V = W + 1
-        var nxt: [Int: [Int]] = [:]
-        var starts: [Int] = []
-        func edge(_ ax: Int, _ ay: Int, _ bx: Int, _ by: Int) {
-            let a = ay * V + ax
-            nxt[a, default: []].append(by * V + bx)
-            starts.append(a)
-        }
-        func inside(_ x: Int, _ y: Int) -> Bool { x >= 0 && y >= 0 && x < W && y < H && reg[y * W + x] != 0 }
-        for y in by0...by1 {
-            for x in bx0...bx1 where reg[y * W + x] != 0 {
-                if !inside(x, y - 1) { edge(x, y, x + 1, y) }
-                if !inside(x + 1, y) { edge(x + 1, y, x + 1, y + 1) }
-                if !inside(x, y + 1) { edge(x + 1, y + 1, x, y + 1) }
-                if !inside(x - 1, y) { edge(x, y + 1, x, y) }
-            }
-        }
+        // 4. trace the region's pixel edges into loops
         var out: [[Double]] = []
-        for s0 in starts {
-            while nxt[s0] != nil {
-                var loop: [V2] = []
-                var v = s0
-                repeat {
-                    guard var outs = nxt[v], !outs.isEmpty else { break }
-                    let w = outs.removeLast()
-                    nxt[v] = outs.isEmpty ? nil : outs
-                    loop.append(V2(Double(v % V), Double(v / V)))
-                    v = w
-                } while v != s0
-                let poly = simplify(loop, 0.35)
-                // pockets the tuck-under step leaves inside a line are dust under the ink, not real holes
-                if poly.count >= 3 && abs(area(poly)) >= 25 {
-                    out.append(poly.flatMap { [$0.x / k, $0.y / k] })
-                }
-            }
+        // pockets the tuck-under step leaves inside a line are dust under the ink, not real holes
+        for poly in PixelTrace.loops(reg, W: W, H: H, x0: bx0, y0: by0, x1: bx1, y1: by1, eps: 0.35, minArea: 25) {
+            out.append(poly.flatMap { [$0.x / k, $0.y / k] })
         }
         return out.isEmpty ? nil : out
     }
@@ -168,9 +137,52 @@ enum FloodFill {
             return true
         }
     }
+}
+
+/// Turns a pixel mask into outline loops: follows the edges between filled and empty pixels
+/// (clockwise around filled areas, so enclosed holes come out as their own loops), then simplifies them.
+enum PixelTrace {
+    /// Loops (pixel-corner coordinates) around the non-zero pixels of `mask` inside the box x0…x1, y0…y1.
+    static func loops(_ mask: [UInt8], W: Int, H: Int, x0: Int, y0: Int, x1: Int, y1: Int, eps: Double, minArea: Double) -> [[V2]] {
+        let V = W + 1
+        var nxt: [Int: [Int]] = [:]
+        var starts: [Int] = []
+        func edge(_ ax: Int, _ ay: Int, _ bx: Int, _ by: Int) {
+            let a = ay * V + ax
+            nxt[a, default: []].append(by * V + bx)
+            starts.append(a)
+        }
+        func inside(_ x: Int, _ y: Int) -> Bool { x >= 0 && y >= 0 && x < W && y < H && mask[y * W + x] != 0 }
+        guard x0 <= x1, y0 <= y1 else { return [] }
+        for y in y0...y1 {
+            for x in x0...x1 where mask[y * W + x] != 0 {
+                if !inside(x, y - 1) { edge(x, y, x + 1, y) }
+                if !inside(x + 1, y) { edge(x + 1, y, x + 1, y + 1) }
+                if !inside(x, y + 1) { edge(x + 1, y + 1, x, y + 1) }
+                if !inside(x - 1, y) { edge(x, y + 1, x, y) }
+            }
+        }
+        var out: [[V2]] = []
+        for s0 in starts {
+            while nxt[s0] != nil {
+                var loop: [V2] = []
+                var v = s0
+                repeat {
+                    guard var outs = nxt[v], !outs.isEmpty else { break }
+                    let w = outs.removeLast()
+                    nxt[v] = outs.isEmpty ? nil : outs
+                    loop.append(V2(Double(v % V), Double(v / V)))
+                    v = w
+                } while v != s0
+                let poly = simplify(loop, eps)
+                if poly.count >= 3 && abs(area(poly)) >= minArea { out.append(poly) }
+            }
+        }
+        return out
+    }
 
     /// Drop the corners that sit on a straight run, then Douglas–Peucker the closed loop.
-    private static func simplify(_ loop: [V2], _ eps: Double) -> [V2] {
+    static func simplify(_ loop: [V2], _ eps: Double) -> [V2] {
         let n = loop.count
         guard n >= 3 else { return loop }
         var pts: [V2] = []
@@ -207,7 +219,7 @@ enum FloodFill {
         return out
     }
 
-    private static func area(_ p: [V2]) -> Double {
+    static func area(_ p: [V2]) -> Double {
         var s = 0.0
         for i in 0..<p.count {
             let a = p[i], b = p[(i + 1) % p.count]

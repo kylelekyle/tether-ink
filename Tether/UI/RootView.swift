@@ -61,6 +61,17 @@ struct RootView: View {
                 }
                 .allowsHitTesting(false)
             }
+            if let w = model.importing {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) { ProgressView(); Text(w).font(.footnote.weight(.medium)) }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(Color.chrome, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
+                        .padding(.bottom, 70)
+                }
+                .allowsHitTesting(false)
+            }
             if let t = model.toastText {
                 VStack { Spacer(); ToastView(text: t).padding(.bottom, 24) }
                     .transition(.opacity)
@@ -74,8 +85,8 @@ struct RootView: View {
         .fullScreenCover(isPresented: $model.showGallery) { GalleryView().environment(model).statusBarHidden(true) }
         .fullScreenCover(item: $model.editor) { t in BrushEditorView(target: t).environment(model).statusBarHidden(true) }
         .sheet(isPresented: $model.showGlobal) { GlobalSmoothingView().environment(model) }
-        .fileImporter(isPresented: $model.importingBackup, allowedContentTypes: [.json]) { result in
-            if case .success(let url) = result { model.importBackup(url) }
+        .fileImporter(isPresented: $model.importingBackup, allowedContentTypes: [.item]) { result in
+            if case .success(let url) = result { model.importFile(url) }
         }
         .photosPicker(isPresented: $model.importingPhoto, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in

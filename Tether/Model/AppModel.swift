@@ -58,6 +58,9 @@ final class AppModel {
     var canRedo = false
     var gallery: [DocMeta] = []
     var librarySet: String? = nil
+    var libraryKind = "vector"          // brush library: "vector" or "pixel"
+    var pixelBrushes: [PixelBrush] = []
+    var importing: String? = nil      // what's being imported right now (shown while it works)
     var sizeBubble: String? = nil     // "size" | "opacity" while a side bar slider is dragged
     var sizeEntry = false             // the type-a-size box beside the side bar
     var dropPoint: CGPoint? = nil     // where the colour being dragged out of the dock is (screen points)
@@ -107,7 +110,67 @@ final class AppModel {
     }
     func baseBrush(_ id: String) -> Brush? { Brush.builtIn.first { $0.id == id } ?? Brush.erasers.first { $0.id == id } }
     func isCustom(_ id: String) -> Bool { prefs.customBrushes.contains { $0.id == id } }
-    func brushes(inSet set: String) -> [Brush] { set == "mine" ? prefs.customBrushes.map { brush($0.id) } : Brush.builtIn.filter { $0.set == set }.map { brush($0.id) } }
+    func brushes(inSet set: String) -> [Brush] {
+        if set == "mine" || set.hasPrefix("imp:") { return prefs.customBrushes.filter { $0.set == set }.map { brush($0.id) } }
+        return Brush.builtIn.filter { $0.set == set }.map { brush($0.id) }
+    }
+    /// The vector library's sets: built in, then each imported set, then the brushes you made.
+    var vectorSets: [(id: String, name: String)] {
+        var out = Brush.sets.filter { $0.id != "mine" }
+        var seen = Set<String>()
+        for b in prefs.customBrushes where b.set.hasPrefix("imp:") && !seen.contains(b.set) {
+            seen.insert(b.set)
+            out.append((b.set, String(b.set.dropFirst(4))))
+        }
+        out.append(("mine", "My brushes"))
+        return out
+    }
+    func refreshPixelBrushes() {
+        let list = PixelBrushStore.list()
+        if list != pixelBrushes { pixelBrushes = list }
+    }
+
+    // MARK: importing
+
+    /// Any file handed to the app: drawings, Procreate artwork, Procreate or Photoshop brushes.
+    func importFile(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        if url.lastPathComponent.lowercased().hasSuffix(".tether.json") || ext == "json" { importBackup(url); return }
+        guard ["procreate", "brushset", "brush", "abr"].contains(ext) else { toast("Tether Ink can't open .\(ext) files"); return }
+        let ok = url.startAccessingSecurityScopedResource()
+        let data = try? Data(contentsOf: url)
+        if ok { url.stopAccessingSecurityScopedResource() }
+        guard let data = data else { toast("Couldn't read that file"); return }
+        let name = url.lastPathComponent
+        importing = ext == "procreate" ? "Tracing \(name)…" : "Importing \(name)…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            if ext == "procreate" {
+                let doc = ProcreateImport.document(data, fileName: name)
+                DispatchQueue.main.async { self?.finishImport(doc) }
+            } else {
+                let r = ext == "abr" ? BrushImport.abr(data, fileName: name) : BrushImport.procreate(data, fileName: name)
+                if let r = r { for (b, files) in r.pixel { PixelBrushStore.save(b, files: files) } }
+                DispatchQueue.main.async { self?.finishImport(r) }
+            }
+        }
+    }
+    private func finishImport(_ doc: Doc?) {
+        importing = nil
+        guard let d = doc else { toast("That .procreate file couldn't be read"); return }
+        saveNow()
+        open(d); saveNow(); refreshGallery(); showGallery = false
+        toast("Imported \(d.name) · \(d.layers.count) layers traced to vector")
+    }
+    private func finishImport(_ r: BrushImport.Result?) {
+        importing = nil
+        guard let r = r else { toast("No brushes found in that file"); return }
+        prefs.customBrushes.append(contentsOf: r.vector)
+        schedulePrefsSave()
+        refreshPixelBrushes()
+        libraryKind = "vector"
+        librarySet = "imp:" + r.setName
+        toast("Imported \(r.vector.count) brushes into \(r.setName): vector copies, originals in Pixel brushes")
+    }
     var currentBrushId: String { tool == .eraser ? prefs.eraserId : prefs.brushId }
     var currentBrush: Brush { brush(currentBrushId) }
 

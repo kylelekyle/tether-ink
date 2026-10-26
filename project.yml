@@ -27,6 +27,30 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Procreate artwork
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [ink.tether.procreate]
+          - CFBundleTypeName: Brushes
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [ink.tether.brushset, ink.tether.brush, ink.tether.abr]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: ink.tether.procreate
+            UTTypeDescription: Procreate artwork
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: { public.filename-extension: [procreate] }
+          - UTTypeIdentifier: ink.tether.brushset
+            UTTypeDescription: Procreate brush set
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: { public.filename-extension: [brushset] }
+          - UTTypeIdentifier: ink.tether.brush
+            UTTypeDescription: Procreate brush
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: { public.filename-extension: [brush] }
+          - UTTypeIdentifier: ink.tether.abr
+            UTTypeDescription: Photoshop brushes
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: { public.filename-extension: [abr] }
         UIRequiresFullScreen: false
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait

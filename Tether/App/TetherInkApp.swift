@@ -10,6 +10,7 @@ struct TetherInkApp: App {
             RootView()
                 .environment(model)
                 .onChange(of: phase) { _, p in if p != .active { model.saveNow() } }
+                .onOpenURL { model.importFile($0) }       // "Open in Tether Ink" from Files or the share sheet
         }
     }
 }

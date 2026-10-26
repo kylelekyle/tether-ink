@@ -6,68 +6,125 @@ struct BrushLibraryPanel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let current = model.prefs.brushId
-        let set = model.librarySet ?? model.brush(current).set
+        let pixel = model.libraryKind == "pixel"
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
                 Text("Brush library").font(.headline)
+                Picker("Library", selection: Binding(get: { model.libraryKind }, set: { model.libraryKind = $0; model.librarySet = nil })) {
+                    Text("Vector").tag("vector"); Text("Pixel").tag("pixel")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
                 Spacer()
-                Button { let id = model.duplicateBrush(current); model.librarySet = "mine"; model.panel = nil; model.editor = EditorTarget(id: id, tab: .about) } label: {
-                    Label("New", systemImage: "plus").font(.subheadline.weight(.semibold))
+                Button { model.panel = nil; model.importingBackup = true } label: {
+                    Label("Import", systemImage: "square.and.arrow.down").font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
+                if !pixel {
+                    Button { let id = model.duplicateBrush(model.prefs.brushId); model.librarySet = "mine"; model.panel = nil; model.editor = EditorTarget(id: id, tab: .about) } label: {
+                        Image(systemName: "plus").font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("New brush")
+                }
             }
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(0..<Brush.sets.count, id: \.self) { i in
-                        let s = Brush.sets[i]
-                        Button { model.librarySet = s.id } label: {
+            if pixel { pixelLibrary } else { vectorLibrary }
+        }
+        .padding(14)
+        .frame(width: 520, height: 470)
+        .onAppear { model.refreshPixelBrushes() }
+    }
+
+    private func setList(_ sets: [(id: String, name: String)], current: String, count: @escaping (String) -> Int) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(0..<sets.count, id: \.self) { i in
+                    let s = sets[i]
+                    Button { model.librarySet = s.id } label: {
+                        HStack {
+                            Text(s.name).font(.subheadline.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
+                            Spacer()
+                            Text("\(count(s.id))").font(.caption).monospacedDigit()
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 9)
+                        .foregroundStyle(s.id == current ? Color.primary : Color.secondary)
+                        .background(s.id == current ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(width: 150)
+    }
+
+    private var vectorLibrary: some View {
+        let current = model.prefs.brushId
+        let sets = model.vectorSets
+        let set = model.librarySet.flatMap { s in sets.contains { $0.id == s } ? s : nil } ?? model.brush(current).set
+        return HStack(alignment: .top, spacing: 10) {
+            setList(sets, current: set) { model.brushes(inSet: $0).count }
+            ScrollView {
+                VStack(spacing: 4) {
+                    let list = model.brushes(inSet: set)
+                    if list.isEmpty {
+                        Text("Brushes you duplicate or create appear here. Tap + to copy the current brush.")
+                            .font(.footnote).foregroundStyle(.secondary).padding(8)
+                    }
+                    ForEach(list) { b in
+                        let on = b.id == current
+                        Button {
+                            if on { model.panel = nil; model.editor = EditorTarget(id: b.id, tab: .smoothing) }
+                            else { model.setPref(\.brushId, b.id) }
+                        } label: {
                             HStack {
-                                Text(s.name).font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("\(model.brushes(inSet: s.id).count)").font(.caption).monospacedDigit()
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(b.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Text(fmtSize(b.size) + (on ? " · tap again to edit" : "")).font(.caption).monospacedDigit().opacity(0.75)
+                                }
+                                Spacer(minLength: 4)
+                                BrushPreview(brush: b)
                             }
-                            .padding(.horizontal, 10).padding(.vertical, 9)
-                            .foregroundStyle(s.id == set ? Color.primary : Color.secondary)
-                            .background(s.id == set ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .foregroundStyle(on ? Color.white : Color.primary)
+                            .background(on ? Color.accentColor : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(width: 128)
-                ScrollView {
-                    VStack(spacing: 4) {
-                        let list = model.brushes(inSet: set)
-                        if list.isEmpty {
-                            Text("Brushes you duplicate or create appear here. Tap New to copy the current brush.")
-                                .font(.footnote).foregroundStyle(.secondary).padding(8)
-                        }
-                        ForEach(list) { b in
-                            let on = b.id == current
-                            Button {
-                                if on { model.panel = nil; model.editor = EditorTarget(id: b.id, tab: .smoothing) }
-                                else { model.setPref(\.brushId, b.id) }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(b.name).font(.subheadline.weight(.semibold))
-                                        Text(fmtSize(b.size) + (on ? " · tap again to edit" : "")).font(.caption).monospacedDigit().opacity(0.75)
-                                    }
-                                    Spacer(minLength: 4)
-                                    BrushPreview(brush: b)
-                                }
-                                .padding(.horizontal, 10).padding(.vertical, 7)
-                                .foregroundStyle(on ? Color.white : Color.primary)
-                                .background(on ? Color.accentColor : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
+            }
+        }
+    }
+
+    private var pixelLibrary: some View {
+        let all = model.pixelBrushes
+        let names = Array(Set(all.map { $0.set })).sorted()
+        let sets = names.map { (id: $0, name: $0) }
+        let set = model.librarySet.flatMap { s in names.contains(s) ? s : nil } ?? names.first ?? ""
+        return HStack(alignment: .top, spacing: 10) {
+            setList(sets, current: set) { s in all.filter { $0.set == s }.count }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    if all.isEmpty {
+                        Text("Pixel brushes you import (.brushset, .brush, .abr) are kept here as they are, ready for pixel layers. A vector copy of each goes into the Vector library to use now.")
+                            .font(.footnote).foregroundStyle(.secondary).padding(8)
+                    } else {
+                        Text("Kept for pixel layers, which are coming. Use the vector copies in the Vector library for now.")
+                            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
+                    }
+                    ForEach(all.filter { $0.set == set }) { b in
+                        HStack {
+                            Text(b.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Spacer(minLength: 4)
+                            if let img = PixelBrushStore.thumbnail(b) {
+                                Image(uiImage: img).resizable().scaledToFit().frame(width: 120, height: 34)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
                     }
                 }
             }
         }
-        .padding(14)
-        .frame(width: 480, height: 470)
     }
 }
 
@@ -412,7 +469,7 @@ struct ActionsPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Bring in a sketch or photo to ink over. It goes on its own layer, so you can lower its opacity or hide it.").font(.footnote).foregroundStyle(.secondary)
             rowButton("Insert a photo", "From your photo library") { model.panel = nil; model.importingPhoto = true }
-            rowButton("Open a drawing file", "A .tether.json file, including ones saved from the web version") { model.panel = nil; model.importingBackup = true }
+            rowButton("Import a file", "Procreate artwork (traced to vector), .brushset, .brush or .abr brushes, or a .tether.json drawing") { model.panel = nil; model.importingBackup = true }
         }
     }
 
