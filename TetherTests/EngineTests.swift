@@ -114,6 +114,21 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(back.active, d.active)
     }
 
+    func testLockedLayersAndEmptyDrawingsSurviveSaving() throws {
+        let d = AppModel.makeSampler()
+        let plain = DocWriter.json(DocWriter.Snapshot(d))
+        XCTAssertFalse(String(decoding: plain, as: UTF8.self).contains("\"locked\""), "unlocked layers keep the old format")
+        d.layers[1].locked = true
+        var back = try JSONDecoder().decode(Doc.self, from: DocWriter.json(DocWriter.Snapshot(d)))
+        XCTAssertEqual(back.layers.map { $0.locked }, [false, true])
+        d.layers = []
+        d.active = ""
+        back = try JSONDecoder().decode(Doc.self, from: DocWriter.json(DocWriter.Snapshot(d)))
+        XCTAssertTrue(back.layers.isEmpty, "a drawing with no layers stays that way")
+        XCTAssertNil(back.activeLayer)
+        XCTAssertEqual(back.activeIndex, -1)
+    }
+
     func testReadsWebBackupFormat() throws {
         let json = """
         {"v":1,"id":"abc123","name":"Web sketch","w":1800,"h":1200,"bg":"#ffffff","bgOn":true,"created":1,"updated":2,"active":"L1",

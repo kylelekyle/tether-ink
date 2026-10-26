@@ -88,11 +88,12 @@ final class Layer: Codable, Identifiable {
     var visible: Bool
     var opacity: Double
     var items: [Item]
+    var locked = false   // locked layers can't be drawn on, erased or cleared
 
     init(name: String) { id = newID(); self.name = name; visible = true; opacity = 1; items = [] }
     init(copy l: Layer, name: String) { id = newID(); self.name = name; visible = l.visible; opacity = l.opacity; items = l.items }
 
-    enum CodingKeys: String, CodingKey { case id, name, visible, opacity, items }
+    enum CodingKeys: String, CodingKey { case id, name, visible, opacity, items, locked }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? newID()
@@ -107,11 +108,13 @@ final class Layer: Codable, Identifiable {
             }
         }
         items = list
+        locked = (try? c.decode(Bool.self, forKey: .locked)) ?? false
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id); try c.encode(name, forKey: .name); try c.encode(visible, forKey: .visible)
         try c.encode(opacity, forKey: .opacity); try c.encode(items, forKey: .items)
+        if locked { try c.encode(true, forKey: .locked) }   // only written when set, so files stay as they were
     }
     var hasErase: Bool { items.contains { $0.isErase } }
 }
@@ -151,10 +154,9 @@ final class Doc: Codable, Identifiable {
         bgOn = (try? c.decode(Bool.self, forKey: .bgOn)) ?? true
         created = (try? c.decode(Double.self, forKey: .created)) ?? nowMs()
         updated = (try? c.decode(Double.self, forKey: .updated)) ?? nowMs()
-        layers = (try? c.decode([Layer].self, forKey: .layers)) ?? []
-        if layers.isEmpty { layers = [Layer(name: "Layer 1")] }
+        layers = (try? c.decode([Layer].self, forKey: .layers)) ?? []   // a drawing may have no layers at all
         active = (try? c.decode(String.self, forKey: .active)) ?? ""
-        if !layers.contains(where: { $0.id == active }) { active = layers[layers.count - 1].id }
+        if !layers.contains(where: { $0.id == active }) { active = layers.last?.id ?? "" }
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
@@ -164,7 +166,9 @@ final class Doc: Codable, Identifiable {
         try c.encode(layers, forKey: .layers); try c.encode(kind, forKey: .kind)
     }
 
-    var activeLayer: Layer { layers.first { $0.id == active } ?? layers[layers.count - 1] }
+    /// nil only when the drawing has no layers.
+    var activeLayer: Layer? { layers.first { $0.id == active } ?? layers.last }
+    /// -1 when the drawing has no layers.
     var activeIndex: Int { layers.firstIndex { $0.id == active } ?? (layers.count - 1) }
 }
 

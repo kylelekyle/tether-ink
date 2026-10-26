@@ -159,19 +159,47 @@ struct LayersPanel: View {
             HStack {
                 Text("Layers").font(.headline)
                 Spacer()
-                Button { model.addLayer() } label: { Label("New", systemImage: "plus").font(.subheadline.weight(.semibold)) }.buttonStyle(.bordered)
+                Button { model.addLayer() } label: {
+                    Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 30, height: 24)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("New layer")
             }
             if let d = model.doc {
-                ScrollView {
-                    VStack(spacing: 4) {
+                List {
+                    Section {
                         ForEach(Array(d.layers.reversed())) { L in
                             layerRow(d, L)
-                            if expanded && L.id == d.active { layerOptions(L) }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    // declared right to left, so they read Lock · Duplicate · Delete
+                                    Button(role: .destructive) { model.deleteLayer(L) } label: { Label("Delete", systemImage: "trash") }
+                                    Button { model.duplicateLayer(L) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                                        .tint(Color(white: 0.55))
+                                    Button { model.toggleLock(L) } label: { Label(L.locked ? "Unlock" : "Lock", systemImage: L.locked ? "lock.open" : "lock") }
+                                        .tint(Color(white: 0.35))
+                                }
+                                .modifier(PanelRow())
                         }
-                        bgRow(d)
-                        if bgOpen { bgOptions(d) }
+                        // press and hold a layer to lift it; the others slide apart while it's dragged
+                        .onMove { from, to in
+                            var shown = Array(d.layers.reversed())
+                            shown.move(fromOffsets: from, toOffset: to)
+                            model.reorderLayers(Array(shown.reversed()))
+                        }
+                    }
+                    Section {
+                        if d.layers.isEmpty {
+                            Text("No layers. Tap + to add one.").font(.footnote).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                                .modifier(PanelRow())
+                        }
+                        bgRow(d).modifier(PanelRow())
+                        if bgOpen { bgOptions(d).modifier(PanelRow()) }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, 0)
             }
         }
         .padding(14)
@@ -185,28 +213,39 @@ struct LayersPanel: View {
 
     private func layerRow(_ d: Doc, _ L: Layer) -> some View {
         let on = L.id == d.active
-        return HStack(spacing: 10) {
-            LayerThumb(doc: d, layer: L, version: model.docVersion)
-            Button {
-                if on { expanded.toggle() } else { model.selectLayer(L.id); expanded = false }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text("\(L.items.count) \(L.items.count == 1 ? "item" : "items")" + (L.opacity < 1 ? " · \(pct(L.opacity))" : "")).font(.caption).monospacedDigit().opacity(0.75)
+        return VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                LayerThumb(doc: d, layer: L, version: model.docVersion)
+                Button {
+                    if on { expanded.toggle() } else { model.selectLayer(L.id); expanded = false }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text("\(L.items.count) \(L.items.count == 1 ? "item" : "items")" + (L.opacity < 1 ? " · \(pct(L.opacity))" : "")).font(.caption).monospacedDigit().opacity(0.75)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                if L.locked {
+                    Button { model.toggleLock(L) } label: {
+                        Image(systemName: "lock.fill").font(.system(size: 14, weight: .medium)).frame(width: 26, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Unlock \(L.name)")
+                }
+                Button { model.toggleVisible(L) } label: {
+                    Image(systemName: L.visible ? "eye" : "eye.slash").font(.system(size: 15, weight: .medium)).frame(width: 30, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L.visible ? "Hide \(L.name)" : "Show \(L.name)")
+                MoveArrows(up: { model.moveLayer(L, up: true) }, down: { model.moveLayer(L, up: false) })
             }
-            .buttonStyle(.plain)
-            Button { model.toggleVisible(L) } label: {
-                Image(systemName: L.visible ? "checkmark.square.fill" : "square").font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L.visible ? "Hide \(L.name)" : "Show \(L.name)")
+            .padding(6)
+            .foregroundStyle(on ? Color.white : Color.primary)
+            .background(on ? Color.accentColor : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
+            if on && expanded { layerOptions(L) }
         }
-        .padding(6)
-        .foregroundStyle(on ? Color.white : Color.primary)
-        .background(on ? Color.accentColor : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
     }
 
     private func layerOptions(_ L: Layer) -> some View {
@@ -217,38 +256,39 @@ struct LayersPanel: View {
             }), onEditingEnded: { model.setLayerOpacity(L, L.opacity, commitFrom: opacityStart); opacityStart = nil })
             HStack {
                 Button("Rename") { newName = L.name; renaming = L }
-                Button("Duplicate") { model.duplicateLayer() }
                 Button("Clear") { model.clearLayer() }
             }
             .buttonStyle(.bordered)
-            HStack {
-                Button { model.moveLayer(up: true) } label: { Label("Up", systemImage: "chevron.up") }
-                Button { model.moveLayer(up: false) } label: { Label("Down", systemImage: "chevron.down") }
-                Button("Delete", role: .destructive) { model.deleteLayer(); expanded = false }
-            }
-            .buttonStyle(.bordered)
+            Text("Swipe a layer left to lock, duplicate or delete it.").font(.caption).foregroundStyle(.secondary)
         }
         .padding(10)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// The paper: always there, always locked. The eye hides it (exports go transparent).
     private func bgRow(_ d: Doc) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 6).fill(Color(uiColor: uiColor(hex: d.bg))).frame(width: 44, height: 44)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
+                .opacity(d.bgOn ? 1 : 0.35)
             Button { bgOpen.toggle() } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Background colour").font(.subheadline.weight(.semibold))
+                    Text("Background").font(.subheadline.weight(.semibold))
                     Text(d.bgOn ? d.bg : "Hidden · exports transparent").font(.caption).opacity(0.75)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            Image(systemName: "lock.fill").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                .frame(width: 26, height: 44)
+                .accessibilityLabel("Background is locked")
             Button { model.setBackground(nil, on: !d.bgOn) } label: {
-                Image(systemName: d.bgOn ? "checkmark.square.fill" : "square").font(.system(size: 20))
+                Image(systemName: d.bgOn ? "eye" : "eye.slash").font(.system(size: 15, weight: .medium)).frame(width: 30, height: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(d.bgOn ? "Hide background" : "Show background")
+            Color.clear.frame(width: 30, height: 1)   // lines the eye up with the layer rows
         }
         .padding(6)
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
@@ -269,6 +309,34 @@ struct LayersPanel: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// Up and down chevrons with a grip between them, on the right edge of a layer row.
+struct MoveArrows: View {
+    let up: () -> Void
+    let down: () -> Void
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: up) { Image(systemName: "chevron.up").frame(width: 30, height: 18).contentShape(Rectangle()) }
+                .accessibilityLabel("Move layer up")
+            Image(systemName: "line.3.horizontal").font(.system(size: 10, weight: .semibold)).opacity(0.45).frame(height: 10)
+                .accessibilityHidden(true)
+            Button(action: down) { Image(systemName: "chevron.down").frame(width: 30, height: 18).contentShape(Rectangle()) }
+                .accessibilityLabel("Move layer down")
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .buttonStyle(.plain)
+    }
+}
+
+/// List rows that look like the rest of the panels: no separators, no row background.
+private struct PanelRow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 

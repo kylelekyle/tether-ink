@@ -72,59 +72,51 @@ struct TopBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 4) {
-            Button { model.saveNow(); model.refreshGallery(); model.showGallery = true } label: {
-                Text("Gallery").font(.system(size: 16, weight: .semibold))
-            }
-            .buttonStyle(BarButton())
-            barIcon("wrench.adjustable", panel: .actions, label: "Actions") { ActionsPanel() }
-            Button { toggle(.smoothing) } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "scribble.variable").font(.system(size: 18, weight: .medium))
-                    Text("Smoothing").font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+        // two small floating docks instead of a full-width bar; the space between them is canvas
+        HStack(alignment: .top, spacing: 0) {
+            HStack(spacing: 2) {
+                Button { model.saveNow(); model.refreshGallery(); model.showGallery = true } label: {
+                    Image(systemName: "square.grid.2x2").font(.system(size: 18, weight: .medium))
                 }
+                .buttonStyle(BarButton())
+                .accessibilityLabel("Gallery")
+                barIcon("wrench.adjustable", panel: .actions, label: "Actions") { ActionsPanel() }
+                barIcon("scribble.variable", panel: .smoothing, label: "Smoothing") { SmoothingPanel() }
             }
-            .buttonStyle(BarButton(on: model.panel == .smoothing))
-            .accessibilityLabel("Smoothing")
-            .popover(isPresented: binding(.smoothing), arrowEdge: .top) { SmoothingPanel().environment(model).presentationCompactAdaptation(.popover) }
+            .modifier(Dock())
 
-            Spacer(minLength: 8)
-            VStack(spacing: 1) {
-                Text(model.doc?.name ?? "").font(.footnote.weight(.semibold)).lineLimit(1)
-                Text(model.status).font(.caption2).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+
+            HStack(spacing: 2) {
+                Button { if model.tool != .brush { model.setTool(.brush); model.panel = nil } else { toggle(.brushes) } } label: {
+                    Image(systemName: "paintbrush.pointed").font(.system(size: 19, weight: .medium))
+                }
+                .buttonStyle(BarButton(on: model.tool == .brush))
+                .accessibilityLabel("Brushes")
+                .popover(isPresented: binding(.brushes), arrowEdge: .top) { BrushLibraryPanel().environment(model).presentationCompactAdaptation(.popover) }
+
+                Button { if model.tool != .eraser { model.setTool(.eraser); model.panel = nil } else { toggle(.eraser) } } label: {
+                    Image(systemName: "eraser").font(.system(size: 19, weight: .medium))
+                }
+                .buttonStyle(BarButton(on: model.tool == .eraser))
+                .accessibilityLabel("Eraser")
+                .popover(isPresented: binding(.eraser), arrowEdge: .top) { EraserPanel().environment(model).presentationCompactAdaptation(.popover) }
+
+                barIcon("square.2.layers.3d", panel: .layers, label: "Layers") { LayersPanel() }
+
+                Button { toggle(.colour) } label: {
+                    Circle().fill(Color(uiColor: uiColor(hex: model.prefs.color)))
+                        .frame(width: 26, height: 26)
+                        .overlay(Circle().strokeBorder(Color.primary, lineWidth: 1.5).padding(-3.5))
+                        .frame(width: 40, height: 38)
+                }
+                .accessibilityLabel("Colour")
+                .popover(isPresented: binding(.colour), arrowEdge: .top) { ColourPanel().environment(model).presentationCompactAdaptation(.popover) }
             }
-            .frame(maxWidth: 260)
-            Spacer(minLength: 8)
-
-            Button { if model.tool != .brush { model.setTool(.brush); model.panel = nil } else { toggle(.brushes) } } label: {
-                Image(systemName: "paintbrush.pointed").font(.system(size: 19, weight: .medium))
-            }
-            .buttonStyle(BarButton(on: model.tool == .brush))
-            .accessibilityLabel("Brushes")
-            .popover(isPresented: binding(.brushes), arrowEdge: .top) { BrushLibraryPanel().environment(model).presentationCompactAdaptation(.popover) }
-
-            Button { if model.tool != .eraser { model.setTool(.eraser); model.panel = nil } else { toggle(.eraser) } } label: {
-                Image(systemName: "eraser").font(.system(size: 19, weight: .medium))
-            }
-            .buttonStyle(BarButton(on: model.tool == .eraser))
-            .accessibilityLabel("Eraser")
-            .popover(isPresented: binding(.eraser), arrowEdge: .top) { EraserPanel().environment(model).presentationCompactAdaptation(.popover) }
-
-            barIcon("square.2.layers.3d", panel: .layers, label: "Layers") { LayersPanel() }
-
-            Button { toggle(.colour) } label: {
-                Circle().fill(Color(uiColor: uiColor(hex: model.prefs.color)))
-                    .frame(width: 26, height: 26)
-                    .overlay(Circle().strokeBorder(Color.primary, lineWidth: 1.5).padding(-3.5))
-                    .frame(width: 40, height: 38)
-            }
-            .accessibilityLabel("Colour")
-            .popover(isPresented: binding(.colour), arrowEdge: .top) { ColourPanel().environment(model).presentationCompactAdaptation(.popover) }
+            .modifier(Dock())
         }
-        .padding(.horizontal, 10)
-        .frame(height: 50)
-        .background(Color.chrome)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
     }
 
     private func toggle(_ p: Panel) { model.panel = model.panel == p ? nil : p }
@@ -136,6 +128,17 @@ struct TopBar: View {
             .buttonStyle(BarButton(on: model.panel == p))
             .accessibilityLabel(label)
             .popover(isPresented: binding(p), arrowEdge: .top) { content().environment(model).presentationCompactAdaptation(.popover) }
+    }
+}
+
+/// A small floating dock, styled like the side bar: solid panel colour, hairline edge, no blur.
+struct Dock: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 4)
+            .frame(height: 46)
+            .background(Color.chrome, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.1)))
     }
 }
 

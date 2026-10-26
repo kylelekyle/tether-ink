@@ -286,8 +286,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         else { pageLayer.backgroundColor = CanvasView.checker.cgColor }
         revealPaper.backgroundColor = pageLayer.backgroundColor
         revealPaper.bounds = pageLayer.bounds
-        activeLayer.opacity = Float(d.activeLayer.opacity)
-        activeLayer.isHidden = !d.activeLayer.visible
+        activeLayer.opacity = Float(d.activeLayer?.opacity ?? 1)
+        activeLayer.isHidden = !(d.activeLayer?.visible ?? false)
         CATransaction.commit()
     }
 
@@ -336,7 +336,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let hide = hiddenItem
         let job = DocRenderer.ScreenJob(layers: d.layers.map { LayerSnap($0, hiding: hide) }, active: d.activeIndex, docW: d.w, docH: d.h, view: view,
                                         pxW: Int((bounds.width * scale).rounded()), pxH: Int((bounds.height * scale).rounded()), scale: scale,
-                                        activeOnly: !fullDirty, layerId: d.activeLayer.id)
+                                        activeOnly: !fullDirty, layerId: d.activeLayer?.id ?? "")
         latest.set(gen)
         pendingFull = true
         let latest = self.latest
@@ -353,7 +353,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let scale = screenScale
         let pw = Int((bounds.width * scale).rounded()), ph = Int((bounds.height * scale).rounded())
         guard let d = model.doc, !fullDirty, !pendingFull, hiddenItem == nil, let base = baseActive, let key = baseKey,
-              key.layer == d.activeLayer.id, key.w == pw, key.h == ph, key.view == view else { return requestRender() }
+              key.layer == (d.activeLayer?.id ?? ""), key.w == pw, key.h == ph, key.view == view else { return requestRender() }
         renderGen += 1
         let gen = renderGen
         appended.append((item, gen))
@@ -462,7 +462,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
 
     private func beginStroke(at p: CGPoint, raw: Double, time: Double, id: ObjectIdentifier?, isPencil: Bool, isFinger: Bool) {
         guard let d = model.doc else { return }
-        if !d.activeLayer.visible { model.toast("This layer is hidden. Turn it on in Layers to draw on it."); return }
+        guard let L = d.activeLayer else { model.toast("No layers. Tap + in Layers to add one."); return }
+        if L.locked { model.toast("This layer is locked. Unlock it in Layers to draw on it."); return }
+        if !L.visible { model.toast("This layer is hidden. Turn it on in Layers to draw on it."); return }
         let b = model.currentBrush
         let erase = model.tool == .eraser
         let dp = toDoc(p)
@@ -566,7 +568,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var shape = st.brush.shape
         shape.sim = !st.isPencil && st.snapped == nil
         if case .ellipse? = st.snapped { shape.ts = 0; shape.te = 0 }
-        let L = d.activeLayer
+        guard let L = d.activeLayer, !L.locked else { updateLive(); return }
         let item = Item.stroke(StrokeItem(id: newID(), m: st.erase ? "e" : "d", c: st.color, o: r3(st.opacity), b: shape, p: roundPts(pts)))
         if let snapped = st.snapped, case .stroke(let si) = item {
             // two steps, so an accidental snap undoes back to the line you drew
@@ -619,8 +621,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     }
 
     private func eraseWholeAt(_ st: Stroke, _ pt: CGPoint) {
-        guard let d = model.doc else { return }
-        let L = d.activeLayer
+        guard let L = model.doc?.activeLayer, !L.locked else { return }
         let r = max(st.brush.size / 2, 4 / Double(zoom))
         var hit = false
         var i = L.items.count - 1

@@ -335,7 +335,7 @@ final class AppModel {
         let w = Double(size.width) * fit, h = Double(size.height) * fit
         let item = ImageItem(id: newID(), src: src, x: (d.w - w) / 2, y: (d.h - h) / 2, w: w, h: h, o: 1)
         let L = Layer(name: "Photo"); L.items = [.image(item)]; L.opacity = 0.6
-        let i = d.activeIndex, prev = d.active
+        let i = max(0, d.activeIndex), prev = d.active
         d.layers.insert(L, at: i)
         push(HistoryEntry("Insert photo", undo: { d.layers.removeAll { $0 === L }; d.active = prev }, redo: { d.layers.insert(L, at: min(i, d.layers.count)) }))
         docChanged()
@@ -353,40 +353,56 @@ final class AppModel {
         push(HistoryEntry("New layer", undo: { d.layers.removeAll { $0 === L }; d.active = prev }, redo: { d.layers.insert(L, at: min(i + 1, d.layers.count)); d.active = L.id }))
         docChanged()
     }
-    func duplicateLayer() {
-        guard let d = doc else { return }
-        let src = d.activeLayer, i = d.activeIndex
-        let L = Layer(copy: src, name: src.name + " copy")
+    /// Copies a layer once, just above it (the copy starts unlocked).
+    func duplicateLayer(_ src: Layer) {
+        guard let d = doc, let i = d.layers.firstIndex(where: { $0 === src }) else { return }
+        let L = Layer(copy: src, name: src.name + " copy"), prev = d.active
         d.layers.insert(L, at: i + 1); d.active = L.id
-        push(HistoryEntry("Duplicate layer", undo: { d.layers.removeAll { $0 === L }; d.active = src.id }, redo: { d.layers.insert(L, at: min(i + 1, d.layers.count)); d.active = L.id }))
+        push(HistoryEntry("Duplicate layer", undo: { d.layers.removeAll { $0 === L }; d.active = prev }, redo: { d.layers.insert(L, at: min(i + 1, d.layers.count)); d.active = L.id }))
         docChanged()
     }
     func clearLayer() {
-        guard let d = doc else { return }
-        let L = d.activeLayer, old = L.items
+        guard let d = doc, let L = d.activeLayer else { return }
+        if L.locked { toast("This layer is locked"); return }
+        let old = L.items
         if old.isEmpty { return }
         L.items = []
         push(HistoryEntry("Clear layer", undo: { L.items = old }, redo: { L.items = [] }))
         docChanged()
     }
-    func deleteLayer() {
-        guard let d = doc else { return }
-        let L = d.activeLayer, i = d.activeIndex
-        if d.layers.count == 1 { clearLayer(); return }
+    /// Any layer can go, even the last one: the canvas and background stay.
+    func deleteLayer(_ L: Layer) {
+        guard let d = doc, let i = d.layers.firstIndex(where: { $0 === L }) else { return }
+        let prev = d.active
         d.layers.remove(at: i)
-        let na = d.layers[max(0, i - 1)].id
-        d.active = na
-        push(HistoryEntry("Delete layer", undo: { d.layers.insert(L, at: min(i, d.layers.count)); d.active = L.id }, redo: { d.layers.removeAll { $0 === L }; d.active = na }))
+        if prev == L.id { d.active = d.layers.isEmpty ? "" : d.layers[max(0, i - 1)].id }
+        let na = d.active
+        push(HistoryEntry("Delete layer", undo: { d.layers.insert(L, at: min(i, d.layers.count)); d.active = prev }, redo: { d.layers.removeAll { $0 === L }; d.active = na }))
         docChanged()
     }
-    func moveLayer(up: Bool) {
-        guard let d = doc else { return }
-        let i = d.activeIndex, j = up ? i + 1 : i - 1
+    /// One step up (towards the top of the stack) or down.
+    func moveLayer(_ L: Layer, up: Bool) {
+        guard let d = doc, let i = d.layers.firstIndex(where: { $0 === L }) else { return }
+        let j = up ? i + 1 : i - 1
         guard j >= 0 && j < d.layers.count else { return }
         let sw = { d.layers.swapAt(i, j) }
         sw()
         push(HistoryEntry("Move layer", undo: sw, redo: sw))
         docChanged()
+    }
+    /// A new stacking order from dragging a layer in the panel (bottom layer first).
+    func reorderLayers(_ order: [Layer]) {
+        guard let d = doc, order.count == d.layers.count, !zip(order, d.layers).allSatisfy({ $0 === $1 }) else { return }
+        let old = d.layers
+        d.layers = order
+        push(HistoryEntry("Move layer", undo: { d.layers = old }, redo: { d.layers = order }))
+        docChanged()
+    }
+    func toggleLock(_ L: Layer) {
+        let was = L.locked
+        L.locked.toggle()
+        push(HistoryEntry(was ? "Unlock layer" : "Lock layer", undo: { L.locked = was }, redo: { L.locked = !was }))
+        docVersion += 1; markDirty()
     }
     func renameLayer(_ L: Layer, _ name: String) {
         let n = name.trimmingCharacters(in: .whitespaces)
@@ -471,7 +487,7 @@ final class AppModel {
     private func runDemo(_ d: String) {
         switch d {
         case "library": panel = .brushes
-        case "layers": panel = .layers
+        case "layers": doc?.layers.first?.locked = true; panel = .layers
         case "smoothing": panel = .smoothing
         case "actions": panel = .actions
         case "colour": UserDefaults.standard.set("disc", forKey: "colourTab"); panel = .colour
@@ -482,6 +498,7 @@ final class AppModel {
         case "gallery": refreshGallery(); showGallery = true
         case "draw": canvas?.demoStrokes()
         case "size": sizeEntry = true
+        case "nolayers": doc?.layers = []; doc?.active = ""; docVersion += 1; canvas?.contentChanged(activeOnly: false); panel = .layers
         default: break
         }
     }
