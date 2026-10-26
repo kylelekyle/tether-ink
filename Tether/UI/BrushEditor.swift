@@ -22,7 +22,7 @@ final class PadCanvas: UIView {
             self.id = id; self.sm = Smoother(p); self.pencil = pencil
             line = Centerline(spacing: 2, minDist: 0.3, startLen: 3, pressureDist: 1 + p.slp * 30)
         }
-        var drawn: [Double] { line.settled(sigmaT: settleT, sigmaS: settleS) }
+        var drawn: [Double] { line.settled(sigmaT: settleT, sigmaS: settleS, speedRef: 0.4) }
     }
     private var live: Live?
 
@@ -115,13 +115,13 @@ final class PadCanvas: UIView {
         ctx.fill(bounds)
         ink().setFill()
         let shape = brush.shape
-        for it in items {
-            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(it, shape))))
+        for (n, it) in items.enumerated() {
+            ctx.addPath(StrokeGeometry.path(StrokeGeometry.shapes(StrokeGeometry.bake(it, shape), shape, seed: UInt64(n + 1))))
             ctx.fillPath(using: .winding)
         }
         if let lv = live {
             let pts = lv.drawn + lv.line.provisional + lv.preview
-            ctx.addPath(StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, shape))))
+            ctx.addPath(StrokeGeometry.path(StrokeGeometry.shapes(StrokeGeometry.bake(pts, shape), shape, seed: UInt64(items.count + 1))))
             ctx.fillPath(using: .winding)
         }
     }
@@ -259,6 +259,23 @@ struct BrushEditorView: View {
                 SectionLabel("Shape")
                 SettingSlider(label: "Default size", value: Binding(get: { sizeToV(draft?.size ?? 1) }, set: { v in draft?.size = (vToSize(v) * 100).rounded() / 100 }),
                               range: 0...1, step: 0.001, format: { fmtSize(vToSize($0)) }, hint: "The size this brush starts at. The side bar changes it while you draw.")
+                if !d.isEraser {
+                    SectionLabel("Scatter")
+                    Toggle("Scatter dabs along the line", isOn: Binding(get: { draft?.stamp != nil }, set: { draft?["scatter"] = $0 ? 1 : 0 }))
+                    if d.stamp != nil {
+                        SettingSlider(label: "Spacing", value: bind("spacing"), range: 0.02...2, step: 0.01,
+                                      hint: "Gap between dabs, as a share of the brush size. Low packs them into a textured line.")
+                        SettingSlider(label: "Dab size", value: bind("scale"), range: 0.05...1.5, step: 0.01,
+                                      hint: "Each dab's size next to the line's width.")
+                        SettingSlider(label: "Jitter sideways", value: bind("jitter"), range: 0...4, step: 0.01,
+                                      hint: "Scatters dabs across the line. 100% spreads them over the brush's width.")
+                        SettingSlider(label: "Jitter along", value: bind("jitterLinear"), range: 0...4, step: 0.01,
+                                      hint: "Scatters dabs forwards and back along the line.")
+                        SettingSlider(label: "Size jitter", value: bind("sizeJitter"), hint: "Makes some dabs smaller at random.")
+                        SettingSlider(label: "Rotation jitter", value: bind("rotation"), hint: "Turns each dab at random. 100% is any angle.")
+                        Toggle("Dabs turn with the line", isOn: Binding(get: { draft?.stamp?.oriented == true }, set: { draft?["oriented"] = $0 ? 1 : 0 }))
+                    }
+                }
             case .about:
                 SectionLabel("About this brush")
                 if model.isCustom(target.id) {

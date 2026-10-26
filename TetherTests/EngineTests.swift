@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import TetherInk
 
 final class EngineTests: XCTestCase {
@@ -148,7 +149,7 @@ final class EngineTests: XCTestCase {
         // and the line trails the pencil by the same time at any speed (the Studio Pen's default streamline)
         let slow = lag(SmoothParams(sl: 0.35), speed: 400), fast = lag(SmoothParams(sl: 0.35), speed: 1200)
         XCTAssertEqual(slow, fast, accuracy: 3)
-        XCTAssertLessThan(fast, 40)
+        XCTAssertLessThan(fast, 90)
     }
 
     // MARK: centerline and pressure
@@ -439,6 +440,75 @@ final class EngineTests: XCTestCase {
         let out = String(decoding: try JSONEncoder().encode(d), as: UTF8.self)
         XCTAssertTrue(out.contains("\"r\":"), "saved again as version 2")
         XCTAssertFalse(out.contains("\"p\":"))
+    }
+
+    // MARK: scatter brushes
+
+    private func straight(_ len: Double, r: Double = 10) -> [Double] {
+        stride(from: 0.0, through: len, by: 2).flatMap { [$0, 0, r] }
+    }
+
+    func testScatterChunksLineUpWithTheWholeStroke() {
+        let k = StampParams(shape: nil, spacing: 0.1, scale: 0.3, jitter: 1, jitterLinear: 1, sizeJitter: 0.5, rotation: 0, oriented: false)
+        let pts = straight(300)
+        let whole = StrokeGeometry.stamps(pts, k, size: 20, seed: 42)
+        let m = 51                                     // split at a shared point, as the live chunks do
+        let first = Array(pts[0..<((m + 1) * 3)]), rest = Array(pts[(m * 3)...])
+        let s1 = StrokeGeometry.arcLength(first)
+        let a = StrokeGeometry.stamps(first, k, size: 20, seed: 42, s0: 0, end: s1)
+        let b = StrokeGeometry.stamps(rest, k, size: 20, seed: 42, s0: s1)
+        XCTAssertEqual(whole.count, a.count + b.count)
+        for (x, y) in zip(whole, a + b) {
+            XCTAssertEqual(x[0].x, y[0].x, accuracy: 1e-6)
+            XCTAssertEqual(x[0].y, y[0].y, accuracy: 1e-6)
+        }
+    }
+
+    func testScatterIsRepeatableAndJitters() {
+        var k = StampParams(spacing: 0.25, scale: 0.2)
+        let pts = straight(200)
+        let still = StrokeGeometry.stamps(pts, k, size: 20, seed: 1)
+        XCTAssertEqual(still.count, 41)                // one dab every 5 units, ends included
+        for d in still { XCTAssertEqual(d.map { $0.y }.reduce(0, +) / Double(d.count), 0, accuracy: 1e-6, "no jitter stays on the line") }
+        k.jitter = 1
+        let a = StrokeGeometry.stamps(pts, k, size: 20, seed: 1), again = StrokeGeometry.stamps(pts, k, size: 20, seed: 1)
+        let other = StrokeGeometry.stamps(pts, k, size: 20, seed: 2)
+        XCTAssertEqual(a.map { $0[0].y }, again.map { $0[0].y }, "the same stroke scatters the same way every time")
+        XCTAssertNotEqual(a.map { $0[0].y }, other.map { $0[0].y })
+        let spread = a.map { abs($0.map { $0.y }.reduce(0, +) / Double($0.count)) }.max() ?? 0
+        XCTAssertGreaterThan(spread, 3)
+        XCTAssertLessThanOrEqual(spread, 10.01, "at 100% dabs stay within the brush width")
+    }
+
+    func testScatterStrokesSurviveSaving() throws {
+        let shape = StampShape(id: "kTest", p: [[-0.5, -0.5, 0.5, -0.5, 0, 0.5]])
+        StampRegistry.shared.register(shape)
+        let d = Doc(w: 400, h: 300, name: "Scatter")
+        var b = BrushShape(size: 20, thin: 0, ts: 0, te: 0, sm: 0.5, sl: 0, g: 1, sim: false)
+        b.k = StampParams(shape: "kTest", spacing: 0.3, scale: 0.5, jitter: 0.7, jitterLinear: 0.2, sizeJitter: 0.1, rotation: 1, oriented: true)
+        d.layers[0].items = [.stroke(StrokeItem(id: "st1", m: "d", c: "#111111", o: 1, b: b, p: straight(100)))]
+        d.stamps = [shape]
+        let back = try JSONDecoder().decode(Doc.self, from: DocWriter.json(DocWriter.Snapshot(d)))
+        guard case .stroke(let s) = back.layers[0].items[0] else { return XCTFail("expected a stroke") }
+        XCTAssertEqual(s.b.k, b.k)
+        XCTAssertEqual(back.stamps, [shape])
+        XCTAssertFalse(GeometryCache.shared.get(s).path.isEmpty)
+    }
+
+    func testTracesABrushShape() {
+        func png(_ draw: (CGContext) -> Void) -> Data {
+            UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true; return f }())
+                .pngData { c in
+                    UIColor.black.setFill(); c.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+                    UIColor.white.setFill(); draw(c.cgContext)
+                }
+        }
+        let dots = png { $0.fillEllipse(in: CGRect(x: 6, y: 6, width: 16, height: 16)); $0.fillEllipse(in: CGRect(x: 36, y: 30, width: 20, height: 20)) }
+        let sh = BrushImport.traceShape(dots, inverted: false)
+        XCTAssertEqual(sh?.p.count, 2)
+        for poly in sh?.p ?? [] { for v in poly { XCTAssertLessThanOrEqual(abs(v), 0.5) } }
+        let round = png { $0.fillEllipse(in: CGRect(x: 2, y: 2, width: 60, height: 60)) }
+        XCTAssertNil(BrushImport.traceShape(round, inverted: false), "a plain round shape is just a dot")
     }
 
     func testSVGExportIsWellFormed() {

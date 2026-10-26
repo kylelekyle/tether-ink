@@ -172,8 +172,9 @@ struct Smoother {
     }
 
     // MARK: streamline
-    /// Lag per stage in ms, the same at every speed: 90 ms at 100%.
-    private var slTau: Double { pow(o.sl, 1.5) * 90 }
+    /// Lag per stage in ms (Procreate-style StreamLine: a fixed time, so fast strokes trail further and quick turns
+    /// get cut short): 200 ms at 100%.
+    private var slTau: Double { pow(o.sl, 1.5) * 200 }
     private mutating func slStep(_ x: Double, _ y: Double, _ dt: Double) {
         guard var a = slA, var b = slB else { return }
         let tau = slTau
@@ -342,16 +343,19 @@ struct Centerline {
     /// (`sigmaT` ms: motion filtering) then over arc length (`sigmaS` canvas units: stabilisation).
     /// The window shrinks evenly toward either end, so the line starts and ends exactly on the pen,
     /// and the last few points keep settling as the pencil moves on.
-    func settled(from: Int = 0, to: Int? = nil, sigmaT: Double, sigmaS: Double) -> [Double] {
+    /// With `speedRef` set, stabilisation grows with drawing speed (up to 4× at 3× `speedRef`), as in Procreate:
+    /// a quick sweep is smoothed hard, a slow deliberate move keeps its shape.
+    func settled(from: Int = 0, to: Int? = nil, sigmaT: Double, sigmaS: Double, speedRef: Double = 0) -> [Double] {
         let n = count
         let end = min(to ?? (n - 1), n - 1)
         guard from <= end, from >= 0 else { return [] }
         if sigmaT <= 0 && sigmaS <= 0 { return flat(from: from, to: end) }
         // the first pass must cover everything the second pass looks at
         var a = from, b = end
+        let maxS = speedRef > 0 ? sigmaS * 4 : sigmaS
         if sigmaS > 0 {
-            while a > 0 && s[from] - s[a - 1] <= 3 * sigmaS { a -= 1 }
-            while b < n - 1 && s[b + 1] - s[end] <= 3 * sigmaS { b += 1 }
+            while a > 0 && s[from] - s[a - 1] <= 3 * maxS { a -= 1 }
+            while b < n - 1 && s[b + 1] - s[end] <= 3 * maxS { b += 1 }
         }
         var first: [V2] = []
         first.reserveCapacity(b - a + 1)
@@ -363,8 +367,15 @@ struct Centerline {
         var out: [Double] = []
         out.reserveCapacity((end - from + 1) * 3)
         for i in from...end {
+            var sig = sigmaS
+            if speedRef > 0 && sigmaS > 0 {
+                let i0 = max(0, i - 3), i1 = min(n - 1, i + 3)
+                let dt = t[i1] - t[i0]
+                let v: Double = dt > 0.5 ? (s[i1] - s[i0]) / dt : 0
+                sig = sigmaS * min(4, 1 + v / speedRef)
+            }
             let q = sigmaS > 0
-                ? Centerline.centred(i, lo: a, hi: b, key: s, k0: s[0], k1: s[n - 1], sigma: sigmaS) { first[$0 - a] }
+                ? Centerline.centred(i, lo: a, hi: b, key: s, k0: s[0], k1: s[n - 1], sigma: sig) { first[$0 - a] }
                 : first[i - a]
             out.append(q.x); out.append(q.y); out.append(p[i])
         }

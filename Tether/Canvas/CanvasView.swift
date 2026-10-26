@@ -93,6 +93,9 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         var line: Centerline
         var settleT = 0.0                      // motion filtering: ms either side of each point
         var settleS = 0.0                      // stabilisation: canvas units either side of each point
+        let itemId = newID()                   // the saved stroke's id, which also seeds a scatter brush's dabs
+        var stampS = 0.0                       // scatter brushes: arc length drawn by the frozen chunks
+        var stampLast: V2?                     // … and where they ended
         var frozen = 0                         // points up to here are drawn by `chunks` and never change
         var chunks: [CAShapeLayer] = []
         var raw: [V2] = []
@@ -439,7 +442,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         let path: CGPath
         if st.snapped != nil {
             clearChunks(st)
-            path = StrokeGeometry.path(StrokeGeometry.outline(st.snapPts), transform: renderedView)
+            path = StrokeGeometry.path(StrokeGeometry.shapes(st.snapPts, st.brush.shape, seed: StrokeGeometry.seed(st.itemId)), transform: renderedView)
         } else {
             let b = st.brush.shape
             if !st.erase { freezeChunks(st, b) }
@@ -447,7 +450,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             let from = st.erase ? 0 : st.frozen
             let pts = drawn(st, from: from) + st.line.provisional + st.preview
             let s0 = from < st.line.count ? st.line.s[from] : 0
-            path = StrokeGeometry.path(StrokeGeometry.outline(StrokeGeometry.bake(pts, b, s0: s0)), transform: renderedView)
+            path = StrokeGeometry.path(liveShapes(st, StrokeGeometry.bake(pts, b, s0: s0), b, advance: false), transform: renderedView)
         }
         if st.erase {
             liveLayer.path = nil
@@ -466,7 +469,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         guard st.line.settled else { return }
         // the end taper and the curve's newest segment can still change; everything further back is final
         // (and the centred smoothing still moves the points within its reach of the pen)
-        let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom) + 3 * st.settleS
+        let keepBack = StrokeGeometry.taperLengths(b).end + 4 * st.line.spacing + 8 / Double(zoom) + 12 * st.settleS
         let lastT = st.line.t.last ?? 0
         let color = cgColor(hex: st.color)
         while st.frozen + chunk < st.line.count && st.line.length - st.line.s[st.frozen + chunk] > keepBack
@@ -477,21 +480,34 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
             l.contentsScale = screenScale
             l.fillRule = .nonZero
             l.fillColor = color
-            l.path = StrokeGeometry.path(StrokeGeometry.outline(pts), transform: renderedView)
+            l.path = StrokeGeometry.path(liveShapes(st, pts, b, advance: true), transform: renderedView)
             liveGroup.insertSublayer(l, below: liveLayer)
             st.chunks.append(l)
             st.frozen = e
         }
     }
+    /// A stretch of the live stroke as shapes. Scatter brushes number their dabs by arc length from the stroke's start,
+    /// so frozen chunks, the tail and the saved stroke all put the same dabs in the same places.
+    private func liveShapes(_ st: Stroke, _ pts: [Double], _ b: BrushShape, advance: Bool) -> [[V2]] {
+        guard b.k != nil, pts.count >= 3 else { return StrokeGeometry.outline(pts) }
+        var s0 = st.stampS
+        if let l = st.stampLast { s0 += l.dist(V2(pts[0], pts[1])) }
+        let len = StrokeGeometry.arcLength(pts)
+        let o = StrokeGeometry.shapes(pts, b, seed: StrokeGeometry.seed(st.itemId), s0: s0, end: advance ? s0 + len : nil)
+        if advance { st.stampS = s0 + len; st.stampLast = V2(pts[pts.count - 3], pts[pts.count - 2]) }
+        return o
+    }
     /// The stroke's points as they're drawn: with motion filtering and stabilisation settled in.
     private func drawn(_ st: Stroke, from: Int = 0, to: Int? = nil) -> [Double] {
-        st.line.settled(from: from, to: to, sigmaT: st.settleT, sigmaS: st.settleS)
+        st.line.settled(from: from, to: to, sigmaT: st.settleT, sigmaS: st.settleS, speedRef: 0.4 / Double(zoom))
     }
     private func clearChunks(_ st: Stroke) {
         if st.chunks.isEmpty { return }
         st.chunks.forEach { $0.removeFromSuperlayer() }
         st.chunks = []
         st.frozen = 0
+        st.stampS = 0
+        st.stampLast = nil
     }
 
     private func updateEraseMask() {
@@ -666,7 +682,8 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         }
         if pts.isEmpty { dropLive(); updateLive(); return }
         guard let L = d.activeLayer, !L.locked else { dropLive(); updateLive(); return }
-        let item = Item.stroke(StrokeItem(id: newID(), m: st.erase ? "e" : "d", c: st.color, o: r3(st.opacity), b: shape, p: roundPts(pts)))
+        if let sid = shape.k?.shape, !d.stamps.contains(where: { $0.id == sid }), let sh = StampRegistry.shared.get(sid) { d.stamps.append(sh) }
+        let item = Item.stroke(StrokeItem(id: st.itemId, m: st.erase ? "e" : "d", c: st.color, o: r3(st.opacity), b: shape, p: roundPts(pts)))
         if let snapped = st.snapped, case .stroke(let si) = item {
             // two steps, so an accidental snap undoes back to the line you drew
             let fs = st.brush.shape
@@ -690,7 +707,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
         // keep showing the stroke as a vector shape until the bitmap that includes it arrives
         let gen = requestAppend(item)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let path = StrokeGeometry.path(StrokeGeometry.outline(pts), transform: renderedView)
+        let path = StrokeGeometry.path(StrokeGeometry.shapes(pts, shape, seed: StrokeGeometry.seed(st.itemId)), transform: renderedView)
         if st.erase {
             pendingErase.append((path, st.opacity, gen))
         } else {
@@ -923,7 +940,7 @@ final class CanvasView: UIView, UIPencilInteractionDelegate {
     private func showEditedShape() {
         guard let se = shapeEdit else { return }
         let pts = StrokeGeometry.bake(se.shape.points(pressure: pressureOf(se.item), zoom: Double(zoom)), shapeBrush(se.item.b, se.shape))
-        let o = StrokeGeometry.outline(pts)
+        let o = StrokeGeometry.shapes(pts, se.item.b, seed: StrokeGeometry.seed(se.item.id))
         CATransaction.begin(); CATransaction.setDisableActions(true)
         liveLayer.path = StrokeGeometry.path(o, transform: renderedView)
         liveLayer.fillColor = cgColor(hex: se.item.c, alpha: CGFloat(se.item.o))

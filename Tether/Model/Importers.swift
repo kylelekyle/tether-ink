@@ -75,20 +75,25 @@ enum Inflate {
 /// Reads the bits of a Procreate brush we can use; everything else in the archive is skipped.
 final class PBrush: NSObject, NSCoding {
     static let keys = ["minSize", "maxSize", "paintSize", "dynamicsPressureSize", "plotSmoothing", "plotMovingAverageStabilization",
-                       "plotFFTSmoothingAmount", "pencilTaperStartLength", "pencilTaperEndLength", "taperStartLength", "taperEndLength"]
+                       "plotFFTSmoothingAmount", "pencilTaperStartLength", "pencilTaperEndLength", "taperStartLength", "taperEndLength",
+                       "plotSpacing", "plotJitter", "plotJitterLinear", "dynamicsJitterSize", "shapeScatter", "shapeRotation"]
+    static let flags = ["oriented", "shapeRandomise", "shapeInverted"]
     var name = "Brush"
     var nums: [String: Double] = [:]
+    var bools: [String: Bool] = [:]
     var sizeCurve: [CGPoint] = []
 
     init(name: String, nums: [String: Double]) { self.name = name; self.nums = nums }
     required init?(coder c: NSCoder) {
         name = (c.decodeObject(forKey: "name") as? String) ?? "Brush"
         for k in PBrush.keys where c.containsValue(forKey: k) { nums[k] = c.decodeDouble(forKey: k) }
+        for k in PBrush.flags where c.containsValue(forKey: k) { bools[k] = c.decodeBool(forKey: k) }
         sizeCurve = (c.decodeObject(forKey: "dynamicsPressureSizeCurve") as? PCurve)?.points ?? []
     }
     func encode(with c: NSCoder) {
         c.encode(name, forKey: "name")
         for (k, v) in nums { c.encode(v, forKey: k) }
+        for (k, v) in bools { c.encode(v, forKey: k) }
     }
 }
 final class PCurve: NSObject, NSCoding {
@@ -175,7 +180,7 @@ enum PixelBrushStore {
 }
 
 enum BrushImport {
-    struct Result { var vector: [Brush] = []; var pixel: [(PixelBrush, [String: Data])] = []; var setName = "Imported" }
+    struct Result { var vector: [Brush] = []; var pixel: [(PixelBrush, [String: Data])] = []; var shapes: [StampShape] = []; var setName = "Imported" }
 
     /// .brushset (many brushes in folders) or .brush (one brush at the top level).
     static func procreate(_ data: Data, fileName: String) -> Result? {
@@ -195,9 +200,16 @@ enum BrushImport {
             let prefix = folder.isEmpty ? "" : folder + "/"
             guard let archive = zip.read(prefix + "Brush.archive"),
                   let pb = KeyedArchive.root(archive, classes: ["SilicaBrush": PBrush.self, "ValkyrieMagnitudinalCurve": PCurve.self]) as? PBrush else { continue }
-            r.vector.append(vectorBrush(pb, set: setName))
             var files: [String: Data] = ["Brush.archive": archive]
             for f in ["Shape.png", "Grain.png", "Shape.jpg", "Grain.jpg"] { if let d = zip.read(prefix + f) { files[f] = d } }
+            var vb = vectorBrush(pb, set: setName)
+            if vb.stamp != nil, let img = files["Shape.png"] ?? files["Shape.jpg"],
+               let sh = traceShape(img, inverted: pb.bools["shapeInverted"] ?? false) {
+                StampRegistry.shared.register(sh)
+                r.shapes.append(sh)
+                vb.stamp?.shape = sh.id
+            }
+            r.vector.append(vb)
             if let t = zip.read(prefix + "QuickLook/Thumbnail.png") { files["Thumbnail.png"] = t }
             r.pixel.append((PixelBrush(id: "p" + newID(), name: pb.name, set: setName, source: "procreate"), files))
         }
@@ -220,7 +232,81 @@ enum BrushImport {
                      taperStart: clampD(ts, 0, 1), taperEnd: clampD(te, 0, 1), smoothing: 0.5, gamma: (gamma * 100).rounded() / 100,
                      streamline: clampD(n("plotSmoothing", 0), 0, 1), slPressure: 0.15,
                      stab: clampD(n("plotMovingAverageStabilization", 0), 0, 1), stabSpeed: 0.5,
-                     motion: clampD(n("plotFFTSmoothingAmount", 0), 0, 1), motionExpr: 0, mode: nil, note: "Imported")
+                     motion: clampD(n("plotFFTSmoothingAmount", 0), 0, 1), motionExpr: 0, mode: nil, note: "Imported",
+                     stamp: stampParams(pb))
+    }
+
+    /// Scatter settings, when the brush scatters, spaces out or jitters its dabs enough to show in vector.
+    static func stampParams(_ pb: PBrush) -> StampParams? {
+        func n(_ k: String) -> Double { pb.nums[k] ?? 0 }
+        let spacing = n("plotSpacing"), jitter = n("plotJitter"), linear = n("plotJitterLinear")
+        guard jitter >= 0.05 || linear >= 0.05 || spacing >= 0.1 else { return nil }
+        var k = StampParams()
+        k.spacing = clampD(spacing, 0.02, 3)
+        k.jitter = clampD(jitter * 2, 0, 4)
+        k.jitterLinear = clampD(linear * 2, 0, 4)
+        k.sizeJitter = clampD(n("dynamicsJitterSize"), 0, 1)
+        k.rotation = (pb.bools["shapeRandomise"] ?? false) ? 1 : clampD(n("shapeScatter") / 2, 0, 1)
+        k.oriented = (pb.bools["oriented"] ?? false) || n("shapeRotation") != 0
+        return k
+    }
+
+    /// A brush's shape image as dab polygons: traced at 96 px, centred in a unit square, the 60 biggest pieces.
+    /// White paints (black, if the brush says its shape is inverted). A plain round shape gives nil: a round dot.
+    static func traceShape(_ data: Data, inverted: Bool) -> StampShape? {
+        guard let img = UIImage(data: data)?.cgImage else { return nil }
+        let S = 96
+        var px = [UInt8](repeating: 0, count: S * S * 4)
+        let ok = px.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: S, height: S, bitsPerComponent: 8, bytesPerRow: S * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.interpolationQuality = .high
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: S, height: S))
+            return true
+        }
+        guard ok else { return nil }
+        // shapes drawn on transparency use their alpha; opaque ones use brightness
+        var clear = 0
+        for i in 0..<(S * S) where px[i * 4 + 3] < 128 { clear += 1 }
+        let useAlpha = clear > S * S / 10
+        var mask = [UInt8](repeating: 0, count: S * S)
+        for i in 0..<(S * S) {
+            let lum = (Int(px[i * 4]) * 3 + Int(px[i * 4 + 1]) * 6 + Int(px[i * 4 + 2])) / 10
+            var on = useAlpha ? px[i * 4 + 3] >= 128 : lum >= 128
+            if inverted && !useAlpha { on = !on }
+            mask[i] = on ? 1 : 0
+        }
+        var loops = PixelTrace.loops(mask, W: S, H: S, x0: 0, y0: 0, x1: S - 1, y1: S - 1, eps: 0.6, minArea: 1.5)
+        guard !loops.isEmpty else { return nil }
+        loops.sort { abs(PixelTrace.area($0)) > abs(PixelTrace.area($1)) }
+        loops = Array(loops.prefix(60))
+        if loops.count == 1 {
+            // a single round blob is just a dot
+            let l = loops[0]
+            let a = abs(PixelTrace.area(l))
+            var per = 0.0
+            for i in 0..<l.count { per += l[i].dist(l[(i + 1) % l.count]) }
+            if per > 0 && 4 * Double.pi * a / (per * per) > 0.8 { return nil }
+        }
+        // outlines wind one way and holes the other, so they fill right with the non-zero rule
+        func inside(_ p: V2, _ poly: [V2]) -> Bool {
+            var c = false
+            var j = poly.count - 1
+            for i in 0..<poly.count {
+                let a = poly[i], b = poly[j]
+                if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { c.toggle() }
+                j = i
+            }
+            return c
+        }
+        var polys: [[Double]] = []
+        for (i, l) in loops.enumerated() {
+            let depth = loops.indices.filter { $0 != i && inside(l[0], loops[$0]) }.count
+            let ccw = PixelTrace.area(l) > 0
+            let q = (ccw == (depth % 2 == 0)) ? l : Array(l.reversed())
+            polys.append(q.flatMap { [r3($0.x / Double(S) - 0.5), r3($0.y / Double(S) - 0.5)] })
+        }
+        return StampShape(id: "k" + newID(), p: polys)
     }
 
     /// Photoshop brushes: names and diameters, from the old (v1/2) and the current (v6+) layouts.

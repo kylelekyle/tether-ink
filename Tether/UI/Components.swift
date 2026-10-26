@@ -154,8 +154,8 @@ struct BrushPreview: View {
                 p.append(x); p.append(y); p.append(pr)
             }
             var shape = brush.shape
-            shape.size = min(max(brush.size, 1.2), 10)
-            let o = StrokeGeometry.outline(StrokeGeometry.bake(p, shape))
+            shape.size = min(max(brush.size, 1.2), shape.k == nil ? 10 : 26)
+            let o = StrokeGeometry.shapes(StrokeGeometry.bake(p, shape), shape, seed: 7)
             ctx.fill(Path(StrokeGeometry.path(o)), with: .foreground)
         }
         .frame(width: 120, height: 34)

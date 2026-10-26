@@ -105,7 +105,10 @@ final class AppModel {
 
     func brush(_ id: String) -> Brush {
         var b = Brush.builtIn.first { $0.id == id } ?? prefs.customBrushes.first { $0.id == id } ?? Brush.erasers.first { $0.id == id } ?? Brush.builtIn[0]
-        if let o = prefs.brushOverrides[id] { for (k, v) in o { b[k] = v } }
+        if let o = prefs.brushOverrides[id] {
+            if let s = o["scatter"] { b["scatter"] = s }   // first, so the scatter settings have something to set
+            for (k, v) in o where k != "scatter" { b[k] = v }
+        }
         return b
     }
     func baseBrush(_ id: String) -> Brush? { Brush.builtIn.first { $0.id == id } ?? Brush.erasers.first { $0.id == id } }
@@ -165,6 +168,7 @@ final class AppModel {
         importing = nil
         guard let r = r else { toast("No brushes found in that file"); return }
         prefs.customBrushes.append(contentsOf: r.vector)
+        prefs.stampShapes.append(contentsOf: r.shapes)
         schedulePrefsSave()
         refreshPixelBrushes()
         libraryKind = "vector"
@@ -196,7 +200,7 @@ final class AppModel {
             prefs.brushOverrides[b.id] = nil
         } else if let base = baseBrush(b.id) {
             var o: [String: Double] = [:]
-            for k in Brush.keys where abs(b[k] - base[k]) > 1e-9 { o[k] = b[k] }
+            for k in Brush.keys + Brush.stampKeys where abs(b[k] - base[k]) > 1e-9 { o[k] = b[k] }
             prefs.brushOverrides[b.id] = o.isEmpty ? nil : o
         }
         schedulePrefsSave()
@@ -619,6 +623,7 @@ final class AppModel {
         case "global": showGlobal = true
         case "gallery": refreshGallery(); showGallery = true
         case "draw": canvas?.demoStrokes()
+        case "scatter": prefs.brushId = "stipple"; canvas?.demoStrokes()
         case "fast": canvas?.demoFast()
         case "midstroke": canvas?.demoMidstroke()
         case "arch": canvas?.demoArch()

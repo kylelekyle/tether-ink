@@ -9,10 +9,11 @@ enum DocWriter {
     struct Snapshot {
         let v: Int, id: String, name: String, w: Double, h: Double, bg: String, bgOn: Bool
         let created: Double, updated: Double, active: String, kind: String
+        let stamps: [StampShape]
         let layers: [LayerShot]
         init(_ d: Doc) {
             v = d.v; id = d.id; name = d.name; w = d.w; h = d.h; bg = d.bg; bgOn = d.bgOn
-            created = d.created; updated = d.updated; active = d.active; kind = d.kind
+            created = d.created; updated = d.updated; active = d.active; kind = d.kind; stamps = d.stamps
             layers = d.layers.map { LayerShot(id: $0.id, name: $0.name, visible: $0.visible, opacity: $0.opacity, items: $0.items, locked: $0.locked) }
         }
         var renderLayers: [LayerSnap] { layers.map { LayerSnap(items: $0.items, visible: $0.visible, opacity: $0.opacity) } }
@@ -71,6 +72,7 @@ enum DocWriter {
                     w.key("sl"); w.num(s.b.sl); w.comma()
                     w.key("g"); w.num(s.b.g); w.comma()
                     w.key("sim"); w.num(s.b.sim ? 1 : 0)
+                    if let k = s.b.k, let j = try? JSONEncoder().encode(k) { w.comma(); w.key("k"); w.o.append(contentsOf: j) }
                     w.raw("}"); w.comma()
                     w.key("r"); w.raw("[")
                     for (k, v) in s.p.enumerated() { if k > 0 { w.comma() }; w.num(v) }
@@ -106,6 +108,7 @@ enum DocWriter {
         }
         w.raw("]"); w.comma()
         w.key("kind"); w.str(d.kind)
+        if !d.stamps.isEmpty, let j = try? JSONEncoder().encode(d.stamps) { w.comma(); w.key("stamps"); w.o.append(contentsOf: j) }
         w.raw("}")
         return Data(w.o)
     }

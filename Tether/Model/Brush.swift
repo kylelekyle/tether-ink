@@ -19,8 +19,11 @@ struct Brush: Codable, Identifiable, Equatable {
     var motionExpr: Double = 0
     var mode: String? = nil     // erasers: "cut" or "whole"
     var note: String? = nil
+    var stamp: StampParams? = nil   // set for scatter brushes
 
     static let keys = ["size", "thinning", "taperStart", "taperEnd", "smoothing", "gamma", "streamline", "slPressure", "stab", "stabSpeed", "motion", "motionExpr"]
+    /// Scatter settings. "scatter" (1 on, 0 off) comes first so the others have something to set.
+    static let stampKeys = ["scatter", "spacing", "jitter", "jitterLinear", "sizeJitter", "rotation", "scale", "oriented"]
 
     subscript(key: String) -> Double {
         get {
@@ -37,6 +40,14 @@ struct Brush: Codable, Identifiable, Equatable {
             case "stabSpeed": return stabSpeed
             case "motion": return motion
             case "motionExpr": return motionExpr
+            case "scatter": return stamp == nil ? 0 : 1
+            case "oriented": return stamp?.oriented == true ? 1 : 0
+            case "spacing": return stamp?.spacing ?? 0
+            case "jitter": return stamp?.jitter ?? 0
+            case "jitterLinear": return stamp?.jitterLinear ?? 0
+            case "sizeJitter": return stamp?.sizeJitter ?? 0
+            case "rotation": return stamp?.rotation ?? 0
+            case "scale": return stamp?.scale ?? 1
             default: return 0
             }
         }
@@ -54,6 +65,14 @@ struct Brush: Codable, Identifiable, Equatable {
             case "stabSpeed": stabSpeed = newValue
             case "motion": motion = newValue
             case "motionExpr": motionExpr = newValue
+            case "scatter": stamp = newValue > 0.5 ? (stamp ?? StampParams(spacing: 0.25, scale: 0.5, jitter: 0.5)) : nil
+            case "oriented": stamp?.oriented = newValue > 0.5
+            case "spacing": stamp?.spacing = max(0.01, newValue)
+            case "jitter": stamp?.jitter = newValue
+            case "jitterLinear": stamp?.jitterLinear = newValue
+            case "sizeJitter": stamp?.sizeJitter = newValue
+            case "rotation": stamp?.rotation = newValue
+            case "scale": stamp?.scale = max(0.05, newValue)
             default: break
             }
         }
@@ -62,7 +81,11 @@ struct Brush: Codable, Identifiable, Equatable {
     var isEraser: Bool { mode != nil }
 
     /// The shape stored with every stroke (input smoothing is already baked into the points).
-    var shape: BrushShape { BrushShape(size: size, thin: thinning, ts: taperStart, te: taperEnd, sm: smoothing, sl: 0, g: gamma, sim: false) }
+    var shape: BrushShape {
+        var s = BrushShape(size: size, thin: thinning, ts: taperStart, te: taperEnd, sm: smoothing, sl: 0, g: gamma, sim: false)
+        s.k = isEraser ? nil : stamp
+        return s
+    }
 
     static let sets: [(id: String, name: String)] = [("inking", "Inking"), ("paint", "Painting"), ("mine", "My brushes")]
 
@@ -75,7 +98,9 @@ struct Brush: Codable, Identifiable, Equatable {
         Brush(id: "brushpen", name: "Brush Pen", set: "inking", size: 6, thinning: 0.9, taperStart: 0.45, taperEnd: 0.7, smoothing: 0.6, gamma: 1.35, streamline: 0.1, slPressure: 0.3),
         Brush(id: "ink", name: "Ink Brush", set: "paint", size: 9, thinning: 0.82, taperStart: 0.3, taperEnd: 0.55, smoothing: 0.6, gamma: 1.25, streamline: 0.1),
         Brush(id: "round", name: "Round Fill", set: "paint", size: 40, thinning: 0.35, taperStart: 0.05, taperEnd: 0.1, smoothing: 0.5, gamma: 1, streamline: 0.1),
-        Brush(id: "marker", name: "Flat Marker", set: "paint", size: 26, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.1)
+        Brush(id: "marker", name: "Flat Marker", set: "paint", size: 26, thinning: 0, taperStart: 0, taperEnd: 0, smoothing: 0.5, gamma: 1, streamline: 0.1),
+        Brush(id: "stipple", name: "Stipple", set: "paint", size: 30, thinning: 0.6, taperStart: 0.1, taperEnd: 0.2, smoothing: 0.5, gamma: 1, streamline: 0, motion: 0,
+              stamp: StampParams(shape: nil, spacing: 0.08, scale: 0.14, jitter: 1, jitterLinear: 1, sizeJitter: 0.5, rotation: 0, oriented: false))
     ]
 
     static let erasers: [Brush] = [

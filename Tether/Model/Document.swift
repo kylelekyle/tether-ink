@@ -12,12 +12,13 @@ struct BrushShape: Codable, Equatable {
     var sl: Double = 0
     var g: Double = 1
     var sim: Bool = false
+    var k: StampParams? = nil   // scatter brushes: dabs instead of a ribbon
 
     init(size: Double, thin: Double, ts: Double, te: Double, sm: Double, sl: Double, g: Double, sim: Bool) {
         self.size = size; self.thin = thin; self.ts = ts; self.te = te; self.sm = sm; self.sl = sl; self.g = g; self.sim = sim
     }
 
-    enum CodingKeys: String, CodingKey { case size, thin, ts, te, sm, sl, g, sim }
+    enum CodingKeys: String, CodingKey { case size, thin, ts, te, sm, sl, g, sim, k }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         size = try c.decodeIfPresent(Double.self, forKey: .size) ?? 3
@@ -30,11 +31,13 @@ struct BrushShape: Codable, Equatable {
         if let n = try? c.decodeIfPresent(Double.self, forKey: .sim) { sim = n != 0 }
         else if let b = try? c.decodeIfPresent(Bool.self, forKey: .sim) { sim = b }
         else { sim = false }
+        k = try? c.decodeIfPresent(StampParams.self, forKey: .k)
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
         try c.encode(size, forKey: .size); try c.encode(thin, forKey: .thin); try c.encode(ts, forKey: .ts); try c.encode(te, forKey: .te)
         try c.encode(sm, forKey: .sm); try c.encode(sl, forKey: .sl); try c.encode(g, forKey: .g); try c.encode(sim ? 1 : 0, forKey: .sim)
+        if let k { try c.encode(k, forKey: .k) }
     }
 }
 
@@ -177,6 +180,7 @@ final class Doc: Codable, Identifiable {
     var active: String
     var layers: [Layer]
     var kind = "drawing"
+    var stamps: [StampShape] = []   // dab shapes the drawing's scatter strokes use
 
     init(w: Double, h: Double, name: String) {
         let l = Layer(name: "Layer 1")
@@ -184,7 +188,7 @@ final class Doc: Codable, Identifiable {
         bg = "#ffffff"; bgOn = true; created = nowMs(); updated = nowMs(); active = l.id; layers = [l]
     }
 
-    enum CodingKeys: String, CodingKey { case v, id, name, w, h, bg, bgOn, created, updated, active, layers, kind }
+    enum CodingKeys: String, CodingKey { case v, id, name, w, h, bg, bgOn, created, updated, active, layers, kind, stamps }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id = ((try? c.decode(String.self, forKey: .id)) ?? newID()).filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
@@ -200,6 +204,8 @@ final class Doc: Codable, Identifiable {
         layers = (try? c.decode([Layer].self, forKey: .layers)) ?? []   // a drawing may have no layers at all
         active = (try? c.decode(String.self, forKey: .active)) ?? ""
         if !layers.contains(where: { $0.id == active }) { active = layers.last?.id ?? "" }
+        stamps = (try? c.decode([StampShape].self, forKey: .stamps)) ?? []
+        stamps.forEach { StampRegistry.shared.register($0) }
     }
     func encode(to e: Encoder) throws {
         var c = e.container(keyedBy: CodingKeys.self)
@@ -207,6 +213,7 @@ final class Doc: Codable, Identifiable {
         try c.encode(w, forKey: .w); try c.encode(h, forKey: .h); try c.encode(bg, forKey: .bg); try c.encode(bgOn, forKey: .bgOn)
         try c.encode(created, forKey: .created); try c.encode(updated, forKey: .updated); try c.encode(active, forKey: .active)
         try c.encode(layers, forKey: .layers); try c.encode(kind, forKey: .kind)
+        if !stamps.isEmpty { try c.encode(stamps, forKey: .stamps) }
     }
 
     /// nil only when the drawing has no layers.

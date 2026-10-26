@@ -266,7 +266,7 @@ final class GeometryCache {
         lock.lock()
         if let c = cache[s.id] { lock.unlock(); return c }
         lock.unlock()
-        let o = StrokeGeometry.outline(s.p)
+        let o = StrokeGeometry.shapes(s.p, s.b, seed: StrokeGeometry.seed(s.id))
         let entry = (StrokeGeometry.path(o), StrokeGeometry.bbox(o))
         lock.lock(); cache[s.id] = entry; lock.unlock()
         return entry

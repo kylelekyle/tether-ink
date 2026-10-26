@@ -6,6 +6,7 @@ struct Prefs: Codable, Equatable {
     var eraserId = "cut"
     var brushOverrides: [String: [String: Double]] = [:]
     var customBrushes: [Brush] = []
+    var stampShapes: [StampShape] = []   // dab shapes of imported scatter brushes
     var color = "#111111"
     var opacityBrush = 1.0
     var opacityEraser = 1.0
@@ -30,7 +31,7 @@ struct Prefs: Codable, Equatable {
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case brushId, eraserId, brushOverrides, customBrushes, color, opacityBrush, opacityEraser, colorHistory, palette
+        case brushId, eraserId, brushOverrides, customBrushes, stampShapes, color, opacityBrush, opacityEraser, colorHistory, palette
         case catchUp, gStab, gMotion, gMotionExpr, curve, snap, snapDelay
         case rightHand, fingerDraw, rotate, pencilTap, pencilSqueeze
     }
@@ -44,6 +45,8 @@ struct Prefs: Codable, Equatable {
         eraserId = v(.eraserId, base.eraserId)
         brushOverrides = v(.brushOverrides, base.brushOverrides)
         customBrushes = v(.customBrushes, base.customBrushes)
+        stampShapes = v(.stampShapes, base.stampShapes)
+        stampShapes.forEach { StampRegistry.shared.register($0) }
         color = v(.color, base.color)
         opacityBrush = v(.opacityBrush, base.opacityBrush)
         opacityEraser = v(.opacityEraser, base.opacityEraser)
