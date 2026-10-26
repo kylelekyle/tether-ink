@@ -220,18 +220,18 @@ enum DocRenderer {
     }
 
     static func renderDoc(_ doc: Doc, scale: Double, background: Bool = true) -> CGImage? {
-        renderDoc(layers: doc.layers.map(LayerSnap.init), w: doc.w, h: doc.h, bg: (background && doc.bgOn) ? doc.bg : nil, scale: scale)
+        renderDoc(layers: doc.layers.map { LayerSnap($0) }, w: doc.w, h: doc.h, bg: (background && doc.bgOn) ? doc.bg : nil, scale: scale)
     }
 
     static func thumbnail(_ doc: Doc, maxSide: Double = 360) -> UIImage? {
         let k = min(1, maxSide / max(doc.w, doc.h))
-        guard let img = renderDoc(layers: doc.layers.map(LayerSnap.init), w: doc.w, h: doc.h, bg: doc.bgOn ? doc.bg : "#ffffff", scale: k) else { return nil }
+        guard let img = renderDoc(layers: doc.layers.map { LayerSnap($0) }, w: doc.w, h: doc.h, bg: doc.bgOn ? doc.bg : "#ffffff", scale: k) else { return nil }
         return UIImage(cgImage: img)
     }
 
     /// The colour of the drawing at a canvas point (what you see, background included).
     static func sampleColor(_ doc: Doc, at p: CGPoint) -> String? {
-        guard let img = renderDoc(layers: doc.layers.map(LayerSnap.init), w: doc.w, h: doc.h, bg: doc.bgOn ? doc.bg : nil, scale: 1,
+        guard let img = renderDoc(layers: doc.layers.map { LayerSnap($0) }, w: doc.w, h: doc.h, bg: doc.bgOn ? doc.bg : nil, scale: 1,
                                   origin: CGPoint(x: p.x - 0.5, y: p.y - 0.5), pixelSize: (1, 1)),
               let data = img.dataProvider?.data, let ptr = CFDataGetBytePtr(data) else { return nil }
         let a = CGFloat(ptr[3]) / 255

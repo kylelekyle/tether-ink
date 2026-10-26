@@ -224,7 +224,10 @@ final class AppModel {
     // MARK: history
 
     func push(_ e: HistoryEntry) { canvas?.endShapeEdit(); history.push(e); refreshUndo() }
-    func refreshUndo() { canUndo = history.canUndo; canRedo = history.canRedo }
+    func refreshUndo() {
+        if canUndo != history.canUndo { canUndo = history.canUndo }
+        if canRedo != history.canRedo { canRedo = history.canRedo }
+    }
     func undo() { canvas?.endShapeEdit(); if let e = history.undo() { docChanged(); toast("Undo · \(e.label)") }; refreshUndo() }
     func redo() { canvas?.endShapeEdit(); if let e = history.redo() { docChanged(); toast("Redo · \(e.label)") }; refreshUndo() }
 
