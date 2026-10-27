@@ -1,0 +1,247 @@
+Command line invocation:
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild -project TetherInk.xcodeproj -scheme TetherInk -configuration Release -sdk iphoneos -destination generic/platform=iOS -derivedDataPath build-dev MARKETING_VERSION=0.1.18 CURRENT_PROJECT_VERSION=18 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+
+Build settings from command line:
+    CODE_SIGN_IDENTITY = 
+    CODE_SIGNING_ALLOWED = NO
+    CODE_SIGNING_REQUIRED = NO
+    CURRENT_PROJECT_VERSION = 18
+    MARKETING_VERSION = 0.1.18
+    SDKROOT = iphoneos18.5
+
+note: Using codesigning identity override: 
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'TetherInk' in project 'TetherInk' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 8889e6f85e21616e0fb772eeba42dce1
+Build description path: /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/XCBuildData/8889e6f85e21616e0fb772eeba42dce1.xcbuilddata
+ClangStatCache /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk /Users/runner/work/tether-ink/tether-ink/build-dev/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -o /Users/runner/work/tether-ink/tether-ink/build-dev/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
+
+CreateBuildDirectory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    builtin-create-build-directory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products
+
+CreateBuildDirectory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    builtin-create-build-directory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex
+
+CreateBuildDirectory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    builtin-create-build-directory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk-61a797010d58d01d70cccb2c634a84a2-VFS-iphoneos/all-product-headers.yaml
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk-61a797010d58d01d70cccb2c634a84a2-VFS-iphoneos/all-product-headers.yaml
+
+CreateBuildDirectory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+    cd /Users/runner/work/tether-ink/tether-ink/TetherInk.xcodeproj
+    builtin-create-build-directory /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyStaticMetadataFileList (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyMetadataFileList (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-project-headers.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-project-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-own-target-headers.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-generated-files.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-generated-files.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-target-headers.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-non-framework-target-headers.hmap (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_const_extract_protocols.json (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftConstValuesFileList (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.LinkFileList (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.LinkFileList
+
+WriteAuxiliaryFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-OutputFileMap.json (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    write-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-OutputFileMap.json
+
+MkDir /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /bin/mkdir -p /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app
+
+MkDir /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /bin/mkdir -p /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned
+
+MkDir /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/unthinned (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /bin/mkdir -p /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/unthinned
+
+GenerateAssetSymbols /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets --compile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_dependencies --output-partial-info-plist /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist --app-icon AppIcon --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --target-device ipad --minimum-deployment-target 17.0 --platform iphoneos --bundle-identifier ink.tether.app --generate-swift-asset-symbol-extensions NO --generate-swift-asset-symbols /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols.swift --generate-objc-asset-symbols /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/* com.apple.actool.compilation-results */
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols.h
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols.swift
+
+
+CompileAssetCatalogVariant thinned /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets --compile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_dependencies_thinned --output-partial-info-plist /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist_thinned --app-icon AppIcon --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --target-device ipad --minimum-deployment-target 17.0 --platform iphoneos
+/* com.apple.actool.compilation-results */
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist_thinned
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned/AppIcon60x60@2x.png
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned/AppIcon76x76@2x~ipad.png
+/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned/Assets.car
+
+
+SwiftDriver TetherInk normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-SwiftDriver -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name TetherInk -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -target arm64-apple-ios17.0 -g -module-cache-path /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -F /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -c -num-threads 3 -Xcc -ivfsstatcache -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -output-file-map /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-generated-files.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-own-target-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-project-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-Swift.h -working-directory /Users/runner/work/tether-ink/tether-ink -no-emit-module-separately-wmo
+
+SwiftCompile normal arm64 Compiling\ AppModel.swift,\ Brush.swift,\ BrushEditor.swift,\ CanvasView.swift,\ Colours.swift,\ Components.swift,\ DocRenderer.swift,\ DocWriter.swift,\ Document.swift,\ Exporter.swift,\ Fill.swift,\ Gallery.swift,\ Geometry.swift,\ GlobalSmoothing.swift,\ Importers.swift,\ Panels.swift,\ PixelBrush.swift,\ PixelPaint.swift,\ Prefs.swift,\ RootView.swift,\ Shapes.swift,\ Smoothing.swift,\ Stamps.swift,\ Store.swift,\ TetherInkApp.swift,\ Tiles.swift,\ Vec.swift,\ GeneratedAssetSymbols.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/AppModel.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/Brush.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/BrushEditor.swift /Users/runner/work/tether-ink/tether-ink/Tether/Canvas/CanvasView.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/Colours.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/Components.swift /Users/runner/work/tether-ink/tether-ink/Tether/Render/DocRenderer.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/DocWriter.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/Document.swift /Users/runner/work/tether-ink/tether-ink/Tether/Render/Exporter.swift /Users/runner/work/tether-ink/tether-ink/Tether/Render/Fill.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/Gallery.swift /Users/runner/work/tether-ink/tether-ink/Tether/Render/Geometry.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/GlobalSmoothing.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/Importers.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/Panels.swift /Users/runner/work/tether-ink/tether-ink/Tether/Pixel/PixelBrush.swift /Users/runner/work/tether-ink/tether-ink/Tether/Pixel/PixelPaint.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/Prefs.swift /Users/runner/work/tether-ink/tether-ink/Tether/UI/RootView.swift /Users/runner/work/tether-ink/tether-ink/Tether/Engine/Shapes.swift /Users/runner/work/tether-ink/tether-ink/Tether/Engine/Smoothing.swift /Users/runner/work/tether-ink/tether-ink/Tether/Render/Stamps.swift /Users/runner/work/tether-ink/tether-ink/Tether/Model/Store.swift /Users/runner/work/tether-ink/tether-ink/Tether/App/TetherInkApp.swift /Users/runner/work/tether-ink/tether-ink/Tether/Pixel/Tiles.swift /Users/runner/work/tether-ink/tether-ink/Tether/Engine/Vec.swift /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'TetherInk' from project 'TetherInk')
+CompileSwift normal arm64 (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    
+/Users/runner/work/tether-ink/tether-ink/Tether/Model/Importers.swift:148:20: warning: constant 'cls' inferred to have type 'AnyClass' (aka 'any AnyObject.Type'), which may be unexpected
+        for (name, cls) in classes { u.setClass(cls, forClassName: name) }
+                   ^
+/Users/runner/work/tether-ink/tether-ink/Tether/Model/Importers.swift:148:20: note: add an explicit type annotation to silence this warning
+        for (name, cls) in classes { u.setClass(cls, forClassName: name) }
+                   ^
+                      : AnyClass
+
+SwiftDriver\ Compilation TetherInk normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-Swift-Compilation -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name TetherInk -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -target arm64-apple-ios17.0 -g -module-cache-path /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -F /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -c -num-threads 3 -Xcc -ivfsstatcache -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -output-file-map /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-generated-files.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-own-target-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-project-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-Swift.h -working-directory /Users/runner/work/tether-ink/tether-ink -no-emit-module-separately-wmo
+
+LinkAssetCatalog /Users/runner/work/tether-ink/tether-ink/Tether/Resources/Assets.xcassets (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-linkAssetCatalog --thinned /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/thinned --thinned-dependencies /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_dependencies_thinned --thinned-info-plist-content /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist_thinned --unthinned /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_output/unthinned --unthinned-dependencies /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_dependencies_unthinned --unthinned-info-plist-content /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist_unthinned --output /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app --plist-output /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist
+note: Emplaced /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/AppIcon60x60@2x.png (in target 'TetherInk' from project 'TetherInk')
+note: Emplaced /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Assets.car (in target 'TetherInk' from project 'TetherInk')
+note: Emplaced /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/AppIcon76x76@2x~ipad.png (in target 'TetherInk' from project 'TetherInk')
+
+ProcessInfoPlistFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Info.plist /Users/runner/work/tether-ink/tether-ink/Tether/Info.plist (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-infoPlistUtility /Users/runner/work/tether-ink/tether-ink/Tether/Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/PkgInfo -expandbuildsettings -format binary -platform iphoneos -additionalcontentfile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/assetcatalog_generated_info.plist -requiredArchitecture arm64 -o /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Info.plist
+
+SwiftDriverJobDiscovery normal arm64 Compiling AppModel.swift, Brush.swift, BrushEditor.swift, CanvasView.swift, Colours.swift, Components.swift, DocRenderer.swift, DocWriter.swift, Document.swift, Exporter.swift, Fill.swift, Gallery.swift, Geometry.swift, GlobalSmoothing.swift, Importers.swift, Panels.swift, PixelBrush.swift, PixelPaint.swift, Prefs.swift, RootView.swift, Shapes.swift, Smoothing.swift, Stamps.swift, Store.swift, TetherInkApp.swift, Tiles.swift, Vec.swift, GeneratedAssetSymbols.swift (in target 'TetherInk' from project 'TetherInk')
+
+SwiftDriver\ Compilation\ Requirements TetherInk normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name TetherInk -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -target arm64-apple-ios17.0 -g -module-cache-path /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -F /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -c -num-threads 3 -Xcc -ivfsstatcache -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -output-file-map /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/tether-ink/tether-ink/build-dev/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-generated-files.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-own-target-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk-project-headers.hmap -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-Swift.h -working-directory /Users/runner/work/tether-ink/tether-ink -no-emit-module-separately-wmo
+
+SwiftMergeGeneratedHeaders /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/TetherInk-Swift.h /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-Swift.h (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-swiftHeaderTool -arch arm64 /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk-Swift.h -o /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/DerivedSources/TetherInk-Swift.h
+
+Copy /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.swiftmodule /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.swiftmodule
+
+Copy /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.swiftdoc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftdoc (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftdoc /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.swiftdoc
+
+Copy /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.abi.json /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.abi.json (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.abi.json /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/arm64-apple-ios.abi.json
+
+Copy /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftsourceinfo (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftsourceinfo /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo
+
+Ld /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk normal (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0 -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -Os -L/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos -L/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -F/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos -F/Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos -filelist /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.swiftmodule -o /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk
+
+ExtractAppIntentsMetadata (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name TetherInk --sdk-root /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk --xcode-version 16F6 --platform-family iOS --deployment-target 17.0 --bundle-identifier ink.tether.app --output /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app --target-triple arm64-apple-ios17.0 --binary-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk --dependency-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk_dependency_info.dat --stringsdata-file /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftFileList --metadata-file-list /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/Objects-normal/arm64/TetherInk.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-10-27 00:00:13.549 appintentsmetadataprocessor[13573:44775] Starting appintentsmetadataprocessor export
+2026-10-27 00:00:13.555 appintentsmetadataprocessor[13573:44775] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+
+GenerateDSYMFile /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app.dSYM /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk -o /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app.dSYM
+
+CopySwiftLibs /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/TetherInk --scan-folder /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Frameworks --scan-folder /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/PlugIns --scan-folder /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/SystemExtensions --scan-folder /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Extensions --platform iphoneos --toolchain /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+AppIntentsSSUTraining (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Info.plist --temp-dir-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/ssu --bundle-id ink.tether.app --product-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app --extracted-metadata-path /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app/Metadata.appintents --metadata-file-list /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Intermediates.noindex/TetherInk.build/Release-iphoneos/TetherInk.build/TetherInk.DependencyMetadataFileList --archive-ssu-assets
+2026-10-27 00:00:13.621 appintentsnltrainingprocessor[13591:44811] Parsing options for appintentsnltrainingprocessor
+2026-10-27 00:00:13.623 appintentsnltrainingprocessor[13591:44811] No AppShortcuts found - Skipping.
+
+RegisterExecutionPolicyException /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-RegisterExecutionPolicyException /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app
+
+Validate /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    builtin-validationUtility /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app -infoplist-subpath Info.plist
+
+Touch /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app (in target 'TetherInk' from project 'TetherInk')
+    cd /Users/runner/work/tether-ink/tether-ink
+    /usr/bin/touch -c /Users/runner/work/tether-ink/tether-ink/build-dev/Build/Products/Release-iphoneos/TetherInk.app
+
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'TetherInk' from project 'TetherInk')
+** BUILD SUCCEEDED **
+

@@ -1,0 +1,33 @@
+{
+  "name": "Tether Ink",
+  "identifier": "ink.tether.source",
+  "subtitle": "Vector drawing for iPad",
+  "website": "https://github.com/kylelekyle/tether-ink",
+  "apps": [
+    {
+      "name": "Tether Ink",
+      "bundleIdentifier": "ink.tether.app",
+      "developerName": "kylelekyle",
+      "subtitle": "Vector drawing with real stabilisers",
+      "localizedDescription": "A vector drawing app for iPad with streamline, stabilisation and motion filtering, pressure-sensitive vector brushes, layers and SVG export.",
+      "iconURL": "https://raw.githubusercontent.com/kylelekyle/tether-ink/main/icon.png",
+      "tintColor": "#2a63f5",
+      "versions": [
+        {
+          "version": "0.1.18",
+          "buildVersion": "18",
+          "date": "2026-10-27T00:13:05.652117+00:00",
+          "localizedDescription": "Build 18 from 09a0c5e",
+          "downloadURL": "https://github.com/kylelekyle/tether-ink/releases/download/latest/TetherInk.ipa",
+          "size": 1000193,
+          "minOSVersion": "17.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
